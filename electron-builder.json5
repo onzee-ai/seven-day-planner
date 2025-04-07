@@ -5,7 +5,7 @@
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.sevenday.planner",
   "asar": true,
-  "icon": "public/favicon.ico",
+  "icon": "public/icons/ico.png",
   "productName": "七日计划",
   "directories": {
     "output": "release"
@@ -19,7 +19,7 @@
     "target": [
       "dmg"
     ],
-    "icon": "public/app.icns",
+    "icon": "public/icons/ico.png",
     "category": "public.app-category.productivity",
     "hardenedRuntime": false,
     "gatekeeperAssess": false,
@@ -36,7 +36,7 @@
         ]
       }
     ],
-    "icon": "public/favicon.ico"
+    "icon": "public/icons/ico.png"
   },
   "nsis": {
     "oneClick": false,
@@ -50,11 +50,11 @@
       "AppImage",
       "deb"
     ],
-    "icon": "public/app.png"
+    "icon": "public/icons/ico.png"
   },
   "publish": {
     "provider": "github",
-    "owner": "yourusername",
+    "owner": "onzee-ai",
     "repo": "seven-day-planner"
   }
 }
