@@ -3,50 +3,14 @@ import { release } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Store from 'electron-store'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { homedir } from 'os'
+import { existsSync } from 'fs'
 
 // 获取 __dirname 的 ES 模块等价物
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-// 尝试从旧的位置迁移数据
-function migrateDataFromOldLocation() {
-  const oldPaths = [
-    join(homedir(), 'Library/Application Support/Electron/tasks.json'),
-    join(homedir(), 'Library/Application Support/electron-store/tasks.json')
-  ]
-  
-  for (const oldPath of oldPaths) {
-    try {
-      if (existsSync(oldPath)) {
-        console.log(`找到旧数据文件: ${oldPath}`)
-        const oldData = JSON.parse(readFileSync(oldPath, 'utf8'))
-        const newStore = new Store({
-          name: 'tasks',
-          cwd: app.getPath('userData')
-        })
-        
-        // 只有当目标存储为空时才迁移
-        const existingTasks = newStore.get('tasks')
-        if (!existingTasks || (Array.isArray(existingTasks) && existingTasks.length === 0)) {
-          console.log('迁移旧数据到新位置')
-          newStore.set('tasks', oldData.tasks || [])
-          // 可选：备份旧文件而不是删除
-          writeFileSync(`${oldPath}.bak`, readFileSync(oldPath))
-          console.log('数据迁移完成')
-        } else {
-          console.log('新存储已有数据，跳过迁移')
-        }
-        return true
-      }
-    } catch (error) {
-      console.error(`尝试迁移数据时出错: ${error}`)
-    }
-  }
-  
-  return false
-}
+// 设置 preload 路径
+const preload = join(__dirname, 'preload.js')
 
 // 初始化 electron-store
 const store = new Store({
@@ -57,42 +21,10 @@ const store = new Store({
   }
 })
 
-// 尝试迁移数据
-migrateDataFromOldLocation()
-
-console.log('Store initialized with path:', store.path)
-
-// 设置环境变量
-const DIST_ELECTRON = join(__dirname, '..')
-const DIST = join(DIST_ELECTRON, '../dist')
-const PUBLIC = app.isPackaged ? DIST : join(DIST_ELECTRON, '../public')
-
-// 开发环境URL
-const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL = 'http://127.0.0.1:5173'
-
-process.env.DIST_ELECTRON = DIST_ELECTRON
-process.env.DIST = DIST
-process.env.PUBLIC = PUBLIC
-
-console.log('Environment variables set:', {
-  DIST_ELECTRON,
-  DIST,
-  PUBLIC
-})
-
-// Windows 7 禁用 GPU 加速
-if (release().startsWith('6.1')) app.disableHardwareAcceleration()
-
-// Windows 10+ 通知
-if (process.platform === 'win32') app.setAppUserModelId(app.getName())
-
 // 设置 IPC 处理程序
 ipcMain.handle('electron-store-get', async (_event, key) => {
   try {
-    console.log('Getting data for key:', key)
-    const value = store.get(key)
-    console.log('Retrieved value:', value)
-    return value
+    return store.get(key)
   } catch (error) {
     console.error('Error getting data:', error)
     return null
@@ -101,9 +33,7 @@ ipcMain.handle('electron-store-get', async (_event, key) => {
 
 ipcMain.handle('electron-store-set', async (_event, { key, value }) => {
   try {
-    console.log('Setting data for key:', key, 'value:', value)
     store.set(key, value)
-    console.log('Data set successfully')
     return true
   } catch (error) {
     console.error('Error setting data:', error)
@@ -111,26 +41,20 @@ ipcMain.handle('electron-store-set', async (_event, { key, value }) => {
   }
 })
 
+// Windows 相关设置
+if (release().startsWith('6.1')) app.disableHardwareAcceleration()
+if (process.platform === 'win32') app.setAppUserModelId(app.getName())
+
 let win: BrowserWindow | null = null
-// 正确设置 preload 路径，指向 dist-electron 目录
-const preload = join(__dirname, 'preload.js')
 
-console.log('Preload script path (final):', preload)
-
-// 检查 preload 路径是否正确，使用 fs 模块
-console.log('File exists check:', { 
-  exists: existsSync(preload),
-  dirname: __dirname
-})
-
+// 创建窗口函数
 async function createWindow() {
-  console.log('[Main] Creating window...')
+  // 创建窗口
   win = new BrowserWindow({
     title: '七日计划',
     width: 1200,
     height: 800,
-    minWidth: 800,
-    minHeight: 600,
+    backgroundColor: '#f5f5f5',
     webPreferences: {
       preload,
       nodeIntegration: false,
@@ -138,104 +62,103 @@ async function createWindow() {
       sandbox: false,
     },
   })
-
-  // 开发环境下打开开发者工具
-  const isDev = process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL
-  if (isDev) {
-    console.log('[Main] Development mode detected, opening DevTools')
-    win.webContents.openDevTools()
-  }
-
-  // 调试事件监听
-  win.webContents.on('did-start-loading', () => {
-    console.log('[Main] Window started loading')
-  })
-
-  win.webContents.on('did-finish-load', () => {
-    console.log('[Main] Window finished loading')
-  })
-
-  win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('[Main] Window failed to load:', errorCode, errorDescription)
-  })
-
-  // 添加更多调试事件
-  win.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    console.log('[Renderer Console]', { level, message, line, sourceId })
-  })
-
-  win.webContents.on('preload-error', (event, preloadPath, error) => {
-    console.error('[Main] Preload script error:', { preloadPath, error })
-  })
-
+  
+  // 开发环境
   if (process.env.VITE_DEV_SERVER_URL) {
-    console.log('[Main] Loading development URL:', process.env.VITE_DEV_SERVER_URL)
     await win.loadURL(process.env.VITE_DEV_SERVER_URL)
-  } else {
-    console.log('[Main] Loading production file:', join(DIST, 'index.html'))
-    await win.loadFile(join(DIST, 'index.html'))
+    win.webContents.openDevTools()
+    return
   }
-
-  // 使用默认浏览器打开外部链接
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https:')) shell.openExternal(url)
-    return { action: 'deny' }
-  })
+  
+  // 生产环境: 加载打包后的Vue应用
+  try {
+    // 尝试加载完整的Vue应用
+    const indexPath = join(app.getAppPath(), 'dist/index.html')
+    
+    if (existsSync(indexPath)) {
+      await win.loadFile(indexPath)
+    } else {
+      // 如找不到index.html，回退到内联HTML
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>七日计划</title>
+            <style>
+              body { 
+                font-family: -apple-system, system-ui, sans-serif; 
+                margin: 0; 
+                padding: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                background-color: #f5f5f5;
+                color: #333;
+              }
+              .container {
+                text-align: center;
+                padding: 40px;
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+                max-width: 600px;
+              }
+              h1 { 
+                color: #42b983;
+                margin-bottom: 20px;
+              }
+              button {
+                background-color: #42b983;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 16px;
+                margin-top: 30px;
+                transition: background-color 0.2s;
+              }
+              button:hover {
+                background-color: #3aa776;
+              }
+              p {
+                line-height: 1.6;
+                font-size: 16px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>七日计划</h1>
+              <p>欢迎使用七日计划应用。这是一个简单的任务规划工具，帮助您更好地管理时间。</p>
+              <p>如需查看完整功能，请使用开发模式运行应用程序。</p>
+              <button onclick="alert('按钮点击成功!')">测试按钮</button>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+    }
+  } catch (error) {
+    console.error('加载应用时出错:', error)
+    win.loadURL(`data:text/html,<html><body><h2>加载应用出错</h2><p>${error.message}</p></body></html>`)
+  }
 }
 
-app.whenReady().then(async () => {
-  console.log('App is ready, creating window...')
-  
-  // 使用单例锁
-  const isFirstInstance = app.requestSingleInstanceLock()
-  
-  // 只有第一个实例才创建窗口
-  if (isFirstInstance) {
-    // 检查是否已经有窗口打开
-    if (BrowserWindow.getAllWindows().length === 0) {
-      console.log('No window found, creating new window')
-      createWindow()
-    } else {
-      console.log('Window already exists, focusing existing window')
-      BrowserWindow.getAllWindows()[0].focus()
-    }
-  } else {
-    console.log('Not first instance, quitting')
-    app.quit()
-  }
-})
+// 应用就绪时创建窗口
+app.whenReady().then(createWindow)
 
-// 确保 window-all-closed 事件处理程序正确清理变量
+// 窗口关闭处理
 app.on('window-all-closed', () => {
-  console.log('All windows closed')
   win = null
   if (process.platform !== 'darwin') app.quit()
 })
 
-// 修改第二个实例的处理方式
-app.on('second-instance', () => {
-  console.log('Second instance detected, focusing existing window')
-  if (win) {
-    if (win.isMinimized()) win.restore()
-    win.focus()
-  } else {
-    // 如果由于某种原因 win 为 null 但有其他窗口
-    const allWindows = BrowserWindow.getAllWindows()
-    if (allWindows.length > 0) {
-      allWindows[0].focus()
-    }
-  }
-})
-
-// 修改 activate 处理程序
+// 应用激活处理
 app.on('activate', () => {
-  console.log('App activated')
-  const allWindows = BrowserWindow.getAllWindows()
-  if (allWindows.length) {
-    console.log('Window exists, focusing')
-    allWindows[0].focus()
-  } else {
-    console.log('No window exists, creating new window')
-    createWindow()
-  }
+  if (!win) createWindow()
 })

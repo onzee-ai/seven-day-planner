@@ -4,15 +4,15 @@
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.sevenday.planner",
-  "asar": true,
+  "asar": false,
   "icon": "public/icons/ico.png",
   "productName": "七日计划",
   "directories": {
     "output": "release"
   },
   "files": [
-    "dist-electron",
-    "dist"
+    "dist-electron/**/*",
+    "dist/**/*"
   ],
   "mac": {
     "artifactName": "七日计划-${version}.${ext}",
