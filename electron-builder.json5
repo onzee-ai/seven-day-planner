@@ -1,0 +1,60 @@
+/**
+ * @see https://www.electron.build/configuration/configuration
+ */
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.sevenday.planner",
+  "asar": true,
+  "icon": "public/favicon.ico",
+  "productName": "七日计划",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist-electron",
+    "dist"
+  ],
+  "mac": {
+    "artifactName": "七日计划-${version}.${ext}",
+    "target": [
+      "dmg"
+    ],
+    "icon": "public/app.icns",
+    "category": "public.app-category.productivity",
+    "hardenedRuntime": false,
+    "gatekeeperAssess": false,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist"
+  },
+  "win": {
+    "artifactName": "七日计划-${version}.${ext}",
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "icon": "public/favicon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false
+  },
+  "linux": {
+    "artifactName": "七日计划-${version}.${ext}",
+    "target": [
+      "AppImage",
+      "deb"
+    ],
+    "icon": "public/app.png"
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "yourusername",
+    "repo": "seven-day-planner"
+  }
+}

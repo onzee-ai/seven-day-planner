@@ -1,0 +1,24 @@
+# 依赖
+node_modules
+.DS_Store
+
+# 构建输出
+dist
+dist-electron
+release/
+*.dmg
+*.app
+*.asar
+
+# 日志
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# 本地环境文件
+.env.local
+.env.*.local

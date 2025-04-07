@@ -1,0 +1,38 @@
+{
+  "name": "seven-day-planner",
+  "productName": "七日计划",
+  "version": "1.0.0",
+  "main": "dist-electron/main.js",
+  "description": "A simple seven-day task planner and manager",
+  "author": "Your Name",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "electron": "electron dist-electron/main.js",
+    "start": "concurrently -k \"npm run dev\" \"wait-on http://127.0.0.1:5173 && npm run electron\"",
+    "build": "vite build && electron-builder",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.2",
+    "@vitejs/plugin-vue": "^4.5.2",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^28.1.3",
+    "electron-builder": "^24.9.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.10",
+    "vite-plugin-electron": "^0.15.5",
+    "vite-plugin-electron-renderer": "^0.14.5",
+    "vue-tsc": "^1.8.25",
+    "wait-on": "^8.0.3"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "dayjs": "^1.11.10",
+    "electron-store": "^8.1.0",
+    "element-plus": "^2.4.4",
+    "vue": "^3.3.11"
+  }
+}
