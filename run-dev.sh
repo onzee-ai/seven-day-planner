@@ -23,6 +23,28 @@ cleanup() {
 # 注册清理函数
 trap cleanup EXIT INT TERM
 
+# 检查依赖是否已安装
+check_and_install_dependencies() {
+  echo "检查项目依赖..."
+  
+  # 检查node_modules目录是否存在
+  if [ ! -d "node_modules" ]; then
+    echo "未发现node_modules目录，正在安装依赖..."
+    npm install
+  else
+    # 检查关键依赖是否存在
+    if ! npm list vite > /dev/null 2>&1 || ! npm list electron > /dev/null 2>&1; then
+      echo "依赖不完整或已损坏，正在重新安装..."
+      npm install
+    else
+      echo "依赖检查通过"
+    fi
+  fi
+}
+
+# 运行依赖检查
+check_and_install_dependencies
+
 # 关闭可能已经运行的进程
 echo "关闭现有的进程..."
 pkill -f Electron 2>/dev/null || true

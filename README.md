@@ -25,27 +25,19 @@
 - **轻量级**：占用资源少，启动快速
 - **离线使用**：无需网络连接，数据存储在本地
 
-## 安装指南
+## 从源码运行
 
-### 方法一：下载预编译版本
-
-1. 前往 [Releases](https://github.com/yourusername/seven-day-planner/releases) 页面
-2. 下载适合您操作系统的安装包
-3. 按照安装向导完成安装
-
-### 方法二：从源代码构建
-
-#### 前提条件
+### 前提条件
 
 - Node.js 16.x 或以上
 - npm 8.x 或以上
 - Git
 
-#### 步骤
+### 步骤
 
 1. 克隆仓库
    ```bash
-   git clone https://github.com/yourusername/seven-day-planner.git
+   git clone https://github.com/onzee-ai/seven-day-planner.git
    cd seven-day-planner
    ```
 
@@ -56,8 +48,31 @@
 
 3. 开发模式运行
    ```bash
-   npm run start
+   ./run-dev.sh
    ```
+   或者直接使用npm命令
+   ```bash
+   npm run dev
+   ```
+
+## 打包应用
+
+项目提供了自动构建脚本，可以为不同平台构建应用：
+
+```bash
+# 显示帮助信息
+./build.sh --help
+
+# 为当前平台构建
+./build.sh --mac    # macOS
+./build.sh --win    # Windows
+./build.sh --linux  # Linux
+
+# 为所有平台构建
+./build.sh --all
+```
+
+打包后的文件将会生成在`release`目录下。
 
 ## 使用方法
 
@@ -81,29 +96,6 @@
 
 - 在左侧边栏可以看到最近7天的历史记录
 - 下拉加载更早的历史记录
-
-## 编译打包
-
-### 为当前平台打包
-
-```bash
-npm run build
-```
-
-打包后的文件将生成在 `release` 目录下。
-
-### 为特定平台打包
-
-```bash
-# Windows
-npm run build -- --win
-
-# macOS
-npm run build -- --mac
-
-# Linux
-npm run build -- --linux
-```
 
 ## 技术栈
 

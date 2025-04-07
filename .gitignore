@@ -9,6 +9,10 @@ release/
 *.dmg
 *.app
 *.asar
+*.exe
+*.msi
+*.rpm
+*.deb
 
 # 日志
 logs
@@ -22,3 +26,22 @@ lerna-debug.log*
 # 本地环境文件
 .env.local
 .env.*.local
+
+# Vue编译缓存
+.vite/
+.vite-ssg-dist/
+.vite-ssg-temp/
+*.local
+.cache
+.temp
+
+# 编辑器目录和文件
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
