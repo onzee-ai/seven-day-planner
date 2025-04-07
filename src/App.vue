@@ -11,19 +11,25 @@ import {
   Timer,
   Right,
   Delete,
-  ArrowDown
+  FolderOpened
 } from '@element-plus/icons-vue'
+import HistoryPanel from './components/HistoryPanel.vue'
+import { DevTools } from './testData'
 
 // 状态
 const currentDate = ref(dayjs().format('YYYY-MM-DD'))
 const tasks = ref<Task[]>([])
-const newTask = ref({ 
+const newTask = ref<{ 
+  title: string;
+  notes: string;
+  dueTime?: number; // Use ? to indicate optional (number | undefined)
+  dueTimeValue: null | Date;
+}>({ 
   title: '', 
   notes: '', 
   dueTime: undefined,
   dueTimeValue: null 
 })
-const displayDates = ref<string[]>([]) // 当前显示的日期列表
 const hasMoreDates = ref(false) // 是否还有更多历史日期可加载
 const isLoadingMore = ref(false) // 是否正在加载更多
 const showNewTaskForm = ref(false) // 是否显示新任务表单
@@ -47,7 +53,9 @@ interface Task {
 const allHistoryDates = computed(() => {
   // 从任务中提取唯一的日期并排序（最新的在最前面）
   const uniqueDates = [...new Set(tasks.value.map(task => task.date))]
-  return uniqueDates.sort((a, b) => dayjs(b).unix() - dayjs(a).unix())
+  const result = uniqueDates.sort((a, b) => dayjs(b).unix() - dayjs(a).unix())
+  console.log('[App] allHistoryDates:', result.length, result.slice(0, 3))
+  return result
 })
 
 const recentDates = computed(() => {
@@ -183,68 +191,27 @@ const refreshTasks = () => {
   ElMessage.success('刷新成功')
 }
 
-// 初始化显示日期，只显示最近7天
-const initDisplayDates = () => {
-  // 首先获取最近7天的日期
-  const last7Days = recentDates.value
-  
-  // 然后获取所有历史日期
-  const allDates = allHistoryDates.value
-  
-  // 初始化显示日期为最近7天中有任务的日期加上最近有任务的7天
-  const recentWithTasks = allDates.filter(date => {
-    return dayjs(date).isAfter(dayjs().subtract(7, 'day').startOf('day'))
-  })
-  
-  // 合并并去重
-  const combined = [...new Set([...last7Days, ...recentWithTasks])]
-  
-  // 排序（最新的在前）
-  displayDates.value = combined.sort((a, b) => dayjs(b).unix() - dayjs(a).unix())
-  
-  // 检查是否还有更多历史日期
-  hasMoreDates.value = allDates.length > displayDates.value.length
-}
-
 // 加载更多历史记录
 const loadMoreHistory = () => {
+  // 加载更多的逻辑保留，但实际操作由HistoryPanel组件处理
   if (isLoadingMore.value || !hasMoreDates.value) return
-  
   isLoadingMore.value = true
   
-  // 获取当前显示的最早日期
-  const earliestDisplayedDate = displayDates.value[displayDates.value.length - 1]
-  
-  // 获取更早的7天日期
-  const olderDates = allHistoryDates.value.filter(date => {
-    return dayjs(date).isBefore(dayjs(earliestDisplayedDate))
-  }).slice(0, 7)
-  
-  // 将新日期添加到显示列表中
-  displayDates.value = [...displayDates.value, ...olderDates]
-  
-  // 更新是否还有更多日期
-  hasMoreDates.value = allHistoryDates.value.length > displayDates.value.length
-  
-  isLoadingMore.value = false
+  // 模拟加载延迟
+  setTimeout(() => {
+    isLoadingMore.value = false
+    // 更新状态
+    hasMoreDates.value = false
+  }, 500)
 }
 
 // 数据持久化
 const loadTasks = async () => {
   try {
-    console.log('[App] Attempting to load tasks...')
-    if (!window.electronAPI?.store?.get) {
-      console.error('[App] electronAPI not available during loadTasks')
-      throw new Error('electronAPI 未正确初始化')
-    }
     const savedTasks = await window.electronAPI.store.get('tasks')
-    console.log('[App] Loaded tasks:', savedTasks)
     if (savedTasks && Array.isArray(savedTasks)) {
       tasks.value = savedTasks as Task[]
-      // 初始化显示日期
-      initDisplayDates()
     } else {
-      console.log('[App] No saved tasks found, initializing empty array')
       tasks.value = []
       await saveTasks()
     }
@@ -257,26 +224,12 @@ const loadTasks = async () => {
 
 const saveTasks = async () => {
   try {
-    console.log('[App] Attempting to save tasks...')
-    if (!window.electronAPI?.store?.set) {
-      console.error('[App] electronAPI not available during saveTasks')
-      throw new Error('electronAPI 未正确初始化')
-    }
-    console.log('[App] Saving tasks:', tasks.value)
-    
     // 在保存前将响应式对象转换为普通对象
     const plainTasks = JSON.parse(JSON.stringify(tasks.value))
-    console.log('[App] Converting to plain object before saving')
-    
     const result = await window.electronAPI.store.set('tasks', plainTasks)
     if (!result) {
-      console.error('[App] Save operation returned false')
       throw new Error('保存失败')
     }
-    console.log('[App] Tasks saved successfully')
-    
-    // 当任务变化时，更新显示的日期列表
-    initDisplayDates()
   } catch (error: any) {
     console.error('[App] Failed to save tasks:', error)
     ElMessage.error(`保存任务失败: ${error.message || '未知错误'}`)
@@ -386,53 +339,63 @@ declare global {
         get: (key: string) => Promise<any>
         set: (key: string, value: any) => Promise<boolean>
       }
+      isDev?: boolean  // 添加可选的isDev属性
     }
   }
 }
 
 // 生命周期钩子
 onMounted(async () => {
-  console.log('[App] Component mounted')
-  
   // 添加键盘事件监听
   window.addEventListener('keydown', handleKeyDown)
   
-  // 简单直接的初始化方法
-  const init = async () => {
-    try {
-      console.log('[App] Waiting for electronAPI...')
+  try {
+    // 开发环境标志
+    const isDevEnv = !window.electronAPI || window.electronAPI.isDev
+    
+    // 控制是否加载测试数据的标志 - 设置为false以禁用测试数据
+    const LOAD_TEST_DATA = false
+    
+    console.log('[App] 初始化, 开发环境:', isDevEnv, '加载测试数据:', LOAD_TEST_DATA)
+    
+    // 如果没有 electronAPI 或在开发环境中
+    if (!window.electronAPI) {
+      console.warn('[App] electronAPI not found, using mock implementation')
       
-      // 如果没有 electronAPI，创建一个模拟版本以便开发测试
-      if (!window.electronAPI) {
-        console.warn('[App] electronAPI not found, using mock implementation')
-        // 创建模拟实现
-        window.electronAPI = {
-          store: {
-            get: async (key: string) => {
-              console.log('[Mock] Getting', key)
-              const stored = localStorage.getItem(key)
-              return stored ? JSON.parse(stored) : null
-            },
-            set: async (key: string, value: any) => {
-              console.log('[Mock] Setting', key, value)
-              localStorage.setItem(key, JSON.stringify(value))
-              return true
-            }
+      // 创建模拟实现
+      window.electronAPI = {
+        store: {
+          get: async (key: string) => {
+            const stored = localStorage.getItem(key)
+            return stored ? JSON.parse(stored) : null
+          },
+          set: async (key: string, value: any) => {
+            localStorage.setItem(key, JSON.stringify(value))
+            return true
           }
-        }
-      } else {
-        console.log('[App] Real electronAPI found')
+        },
+        isDev: true
       }
-      
-      // 加载任务
-      await loadTasks()
-    } catch (error: any) {
-      console.error('[App] Initialization error:', error)
-      ElMessage.error(`初始化失败: ${error.message}`)
     }
+    
+    // 在开发环境中（浏览器或electron开发模式）且开启了测试数据标志时才生成测试数据
+    if (isDevEnv && LOAD_TEST_DATA) {
+      console.log('[App] 开发环境，生成测试数据')
+      const testData = DevTools.generateHistoryData()
+      console.log(`[App] 生成了${testData.length}条测试数据`)
+      tasks.value = testData
+      
+      // 保存测试数据
+      window.electronAPI.store.set('tasks', testData)
+      return
+    }
+    
+    // 加载任务
+    await loadTasks()
+  } catch (error: any) {
+    console.error('[App] Initialization error:', error)
+    ElMessage.error(`初始化失败: ${error.message}`)
   }
-  
-  await init()
 })
 </script>
 
@@ -454,32 +417,14 @@ onMounted(async () => {
     
     <div class="main-content">
       <div class="sidebar">
-        <div class="history-title">历史记录</div>
-        <el-scrollbar>
-          <el-menu :default-active="currentDate">
-            <el-menu-item 
-              v-for="date in displayDates" 
-              :key="date" 
-              :index="date"
-              @click="selectDate(date)"
-            >
-              <el-icon><Calendar /></el-icon>
-              <span>{{ formatDate(date) }}</span>
-              <span v-if="isToday(date)" class="today-mark">(今日)</span>
-            </el-menu-item>
-            
-            <div v-if="hasMoreDates" class="load-more-container">
-              <el-button 
-                type="text" 
-                :loading="isLoadingMore" 
-                @click="loadMoreHistory"
-                class="load-more-btn"
-              >
-                <el-icon><ArrowDown /></el-icon> 加载更多历史记录
-              </el-button>
-            </div>
-          </el-menu>
-        </el-scrollbar>
+        <HistoryPanel 
+          :current-date="currentDate"
+          :all-dates="allHistoryDates"
+          :is-loading="isLoadingMore"
+          :has-more="hasMoreDates"
+          @select-date="selectDate"
+          @load-more="loadMoreHistory"
+        />
       </div>
 
       <div class="content">
@@ -596,7 +541,7 @@ onMounted(async () => {
                         v-model="tempDueTime"
                         format="HH:mm:ss"
                         placeholder="选择截止时间"
-                        @change="time => updateTaskDueTime(time)"
+                        @change="updateTaskDueTime"
                       />
                     </div>
                   </el-popover>
@@ -677,17 +622,11 @@ onMounted(async () => {
 }
 
 .sidebar {
-  width: 200px;
+  width: 250px;
   background-color: #fff;
   border-right: 1px solid #e4e7ed;
   display: flex;
   flex-direction: column;
-}
-
-.history-title {
-  padding: 16px;
-  font-weight: bold;
-  border-bottom: 1px solid #e4e7ed;
 }
 
 .content {
@@ -762,24 +701,6 @@ onMounted(async () => {
 
 .el-menu-item .el-icon {
   margin-right: 8px;
-}
-
-/* 加载更多按钮样式 */
-.load-more-container {
-  padding: 10px;
-  text-align: center;
-  border-top: 1px solid #e4e7ed;
-}
-
-.load-more-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.load-more-btn .el-icon {
-  margin-right: 4px;
 }
 
 .new-task-form {

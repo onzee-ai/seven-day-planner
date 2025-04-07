@@ -1,0 +1,453 @@
+<script setup lang="ts">
+import { ref, computed, watch } from 'vue'
+import dayjs from 'dayjs'
+import {
+  Calendar,
+  FolderOpened,
+  ArrowDown
+} from '@element-plus/icons-vue'
+
+// 定义props
+const props = defineProps<{
+  currentDate: string
+  allDates: string[]
+  isLoading: boolean
+  hasMore: boolean
+}>()
+
+// 定义事件
+const emit = defineEmits<{
+  (e: 'select-date', date: string): void
+  (e: 'load-more'): void
+}>()
+
+// 状态
+const groupedHistory = ref<HistoryGroup[]>([])
+const expandedGroups = ref<string[]>([]) // 存储已展开的分组ID
+const displayDates = ref<string[]>([]) // 当前显示的日期列表（当前周和最近7天）
+
+// 历史记录分组类型
+interface HistoryGroup {
+  id: string
+  type: 'week' | 'month' | 'quarter' | 'year'
+  title: string
+  dates: string[]
+  subGroups?: HistoryGroup[]
+}
+
+// 计算最近7天的日期
+const recentDates = computed(() => {
+  const dates = []
+  for (let i = 6; i >= 0; i--) {
+    dates.push(dayjs().subtract(i, 'day').format('YYYY-MM-DD'))
+  }
+  return dates
+})
+
+// 是否当前星期
+const isCurrentWeek = (date: string) => {
+  const startOfWeek = dayjs().startOf('week')
+  const endOfWeek = dayjs().endOf('week')
+  return dayjs(date).isAfter(startOfWeek) && dayjs(date).isBefore(endOfWeek)
+}
+
+// 是否当天
+const isToday = (date: string) => {
+  return date === dayjs().format('YYYY-MM-DD')
+}
+
+// 获取日期所属的周
+const getWeekOfMonth = (date: string) => {
+  return Math.ceil(dayjs(date).date() / 7)
+}
+
+// 获取日期所属的月份
+const getMonth = (date: string) => {
+  return dayjs(date).month() + 1 // dayjs 的月份从 0 开始
+}
+
+// 获取日期所属的季度
+const getQuarter = (date: string) => {
+  const month = getMonth(date)
+  return Math.ceil(month / 3)
+}
+
+// 获取日期所属的年份
+const getYear = (date: string) => {
+  return dayjs(date).year()
+}
+
+// 格式化日期
+const formatDate = (date: string) => {
+  return dayjs(date).format('YYYY-MM-DD')
+}
+
+// 判断是否应该展开组
+const shouldExpandGroup = (groupId: string) => {
+  return expandedGroups.value.includes(groupId)
+}
+
+// 切换组展开状态
+const toggleGroupExpand = (groupId: string) => {
+  const index = expandedGroups.value.indexOf(groupId)
+  if (index > -1) {
+    expandedGroups.value.splice(index, 1)
+  } else {
+    expandedGroups.value.push(groupId)
+  }
+}
+
+// 选择日期
+const selectDate = (date: string) => {
+  emit('select-date', date)
+}
+
+// 加载更多
+const loadMore = () => {
+  emit('load-more')
+}
+
+// 初始化方法，处理日期分组
+const initDateGroups = () => {
+  // 当前周日期（只有当前周的日期才显示在顶层）
+  const currentWeekDates = props.allDates.filter(date => 
+    isCurrentWeek(date) || isToday(date)
+  )
+  
+  // 设置显示日期为当前周日期
+  displayDates.value = [...new Set(currentWeekDates)]
+    .sort((a, b) => dayjs(b).unix() - dayjs(a).unix())
+  
+  // 对历史日期进行分组（所有非当前周的日期）
+  organizeHistoryGroups(props.allDates.filter(date => 
+    !isCurrentWeek(date) && !isToday(date)
+  ))
+}
+
+// 组织历史记录分组
+const organizeHistoryGroups = (dates: string[]) => {
+  if (!dates.length) {
+    groupedHistory.value = []
+    return
+  }
+  
+  // 按年分组
+  const yearGroups: {[key: string]: string[]} = {}
+  
+  dates.forEach(date => {
+    const year = getYear(date).toString()
+    if (!yearGroups[year]) {
+      yearGroups[year] = []
+    }
+    yearGroups[year].push(date)
+  })
+  
+  // 转换为HistoryGroup结构
+  const years: HistoryGroup[] = Object.keys(yearGroups)
+    .sort((a, b) => parseInt(b) - parseInt(a))
+    .map(year => {
+      const yearDates = yearGroups[year]
+      
+      // 按季度分组
+      const quarterGroups: {[key: string]: string[]} = {}
+      
+      yearDates.forEach(date => {
+        const quarter = `Q${getQuarter(date)}`
+        if (!quarterGroups[quarter]) {
+          quarterGroups[quarter] = []
+        }
+        quarterGroups[quarter].push(date)
+      })
+      
+      // 创建季度分组
+      const quarters = Object.keys(quarterGroups)
+        .sort((a, b) => {
+          // 按Q1, Q2, Q3, Q4排序
+          return parseInt(b.replace('Q', '')) - parseInt(a.replace('Q', ''))
+        })
+        .map(quarter => {
+          const quarterDates = quarterGroups[quarter]
+          
+          // 按月分组
+          const monthGroups: {[key: string]: string[]} = {}
+          
+          quarterDates.forEach(date => {
+            const month = `${getMonth(date)}月`
+            if (!monthGroups[month]) {
+              monthGroups[month] = []
+            }
+            monthGroups[month].push(date)
+          })
+          
+          // 创建月份分组
+          const months = Object.keys(monthGroups)
+            .sort((a, b) => {
+              // 按月份数字排序
+              return parseInt(b.replace('月', '')) - parseInt(a.replace('月', ''))
+            })
+            .map(month => {
+              const monthDates = monthGroups[month]
+              
+              // 按周分组
+              const weekGroups: {[key: string]: string[]} = {}
+              
+              monthDates.forEach(date => {
+                const week = `${month}第${getWeekOfMonth(date)}周`
+                if (!weekGroups[week]) {
+                  weekGroups[week] = []
+                }
+                weekGroups[week].push(date)
+              })
+              
+              // 创建周分组
+              const weeks = Object.keys(weekGroups)
+                .sort((a, b) => {
+                  // 提取周数进行排序
+                  const weekA = parseInt(a.match(/第(\d+)周/)?.[1] || '0')
+                  const weekB = parseInt(b.match(/第(\d+)周/)?.[1] || '0')
+                  return weekB - weekA
+                })
+                .map(week => {
+                  return {
+                    id: `week-${month}-${week}`,
+                    type: 'week' as const,
+                    title: week,
+                    dates: weekGroups[week].sort((a, b) => dayjs(b).unix() - dayjs(a).unix())
+                  }
+                })
+              
+              return {
+                id: `month-${year}-${month}`,
+                type: 'month' as const,
+                title: month,
+                dates: monthDates,
+                subGroups: weeks
+              }
+            })
+          
+          return {
+            id: `quarter-${year}-${quarter}`,
+            type: 'quarter' as const,
+            title: quarter,
+            dates: quarterDates,
+            subGroups: months
+          }
+        })
+      
+      return {
+        id: `year-${year}`,
+        type: 'year' as const,
+        title: `${year}年`,
+        dates: yearDates,
+        subGroups: quarters
+      }
+    })
+  
+  groupedHistory.value = years
+}
+
+// 监听props变化，重新初始化分组
+watch(() => props.allDates, () => {
+  console.log('[HistoryPanel] allDates changed:', props.allDates.length)
+  initDateGroups()
+}, { immediate: true })
+</script>
+
+<template>
+  <div class="history-panel">
+    <div class="history-title">历史记录</div>
+    <el-scrollbar>
+      <el-menu :default-active="currentDate">
+        <!-- 当前星期的日期和当天 -->
+        <el-menu-item 
+          v-for="date in displayDates" 
+          :key="date" 
+          :index="date"
+          @click="selectDate(date)"
+        >
+          <el-icon><Calendar /></el-icon>
+          <span>{{ formatDate(date) }}</span>
+          <span v-if="isToday(date)" class="today-mark">(今日)</span>
+        </el-menu-item>
+        
+        <!-- 分组历史记录 -->
+        <template v-for="yearGroup in groupedHistory" :key="yearGroup.id">
+          <!-- 年份分组 -->
+          <div class="history-group year-group">
+            <div 
+              class="group-header" 
+              @click="toggleGroupExpand(yearGroup.id)"
+            >
+              <el-icon><FolderOpened /></el-icon>
+              <span>{{ yearGroup.title }}</span>
+              <span class="expand-icon">{{ shouldExpandGroup(yearGroup.id) ? '▼' : '▶' }}</span>
+            </div>
+            
+            <!-- 季度分组 -->
+            <div v-if="shouldExpandGroup(yearGroup.id)" class="subgroups">
+              <template v-for="quarterGroup in yearGroup.subGroups" :key="quarterGroup.id">
+                <div class="history-group quarter-group">
+                  <div 
+                    class="group-header" 
+                    @click="toggleGroupExpand(quarterGroup.id)"
+                  >
+                    <el-icon><FolderOpened /></el-icon>
+                    <span>{{ quarterGroup.title }}</span>
+                    <span class="expand-icon">{{ shouldExpandGroup(quarterGroup.id) ? '▼' : '▶' }}</span>
+                  </div>
+                  
+                  <!-- 月份分组 -->
+                  <div v-if="shouldExpandGroup(quarterGroup.id)" class="subgroups">
+                    <template v-for="monthGroup in quarterGroup.subGroups" :key="monthGroup.id">
+                      <div class="history-group month-group">
+                        <div 
+                          class="group-header" 
+                          @click="toggleGroupExpand(monthGroup.id)"
+                        >
+                          <el-icon><FolderOpened /></el-icon>
+                          <span>{{ monthGroup.title }}</span>
+                          <span class="expand-icon">{{ shouldExpandGroup(monthGroup.id) ? '▼' : '▶' }}</span>
+                        </div>
+                        
+                        <!-- 周分组 -->
+                        <div v-if="shouldExpandGroup(monthGroup.id)" class="subgroups">
+                          <template v-for="weekGroup in monthGroup.subGroups" :key="weekGroup.id">
+                            <div class="history-group week-group">
+                              <div 
+                                class="group-header" 
+                                @click="toggleGroupExpand(weekGroup.id)"
+                              >
+                                <el-icon><FolderOpened /></el-icon>
+                                <span>{{ weekGroup.title }}</span>
+                                <span class="expand-icon">{{ shouldExpandGroup(weekGroup.id) ? '▼' : '▶' }}</span>
+                              </div>
+                              
+                              <!-- 日期列表 -->
+                              <div v-if="shouldExpandGroup(weekGroup.id)" class="subgroups">
+                                <el-menu-item 
+                                  v-for="date in weekGroup.dates" 
+                                  :key="date" 
+                                  :index="date"
+                                  @click="selectDate(date)"
+                                  class="date-item"
+                                >
+                                  <el-icon><Calendar /></el-icon>
+                                  <span>{{ formatDate(date) }}</span>
+                                </el-menu-item>
+                              </div>
+                            </div>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+        
+        <div v-if="hasMore" class="load-more-container">
+          <el-button 
+            type="text" 
+            :loading="isLoading" 
+            @click="loadMore"
+            class="load-more-btn"
+          >
+            <el-icon><ArrowDown /></el-icon> 加载更多历史记录
+          </el-button>
+        </div>
+      </el-menu>
+    </el-scrollbar>
+  </div>
+</template>
+
+<style scoped>
+.history-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.history-title {
+  padding: 16px;
+  font-weight: bold;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.today-mark {
+  color: #409eff;
+  margin-left: 4px;
+}
+
+/* 历史记录分组样式 */
+.history-group {
+  margin: 4px 0;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-weight: bold;
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+.group-header:hover {
+  background-color: #f5f7fa;
+}
+
+.group-header .el-icon {
+  margin-right: 8px;
+}
+
+.expand-icon {
+  margin-left: auto;
+}
+
+.subgroups {
+  margin-left: 16px;
+  border-left: 1px solid #e4e7ed;
+}
+
+.year-group > .group-header {
+  color: #409eff;
+}
+
+.quarter-group > .group-header {
+  color: #67c23a;
+}
+
+.month-group > .group-header {
+  color: #e6a23c;
+}
+
+.week-group > .group-header {
+  color: #909399;
+}
+
+.date-item {
+  font-size: 0.9em;
+  padding-left: 30px !important;
+}
+
+/* 加载更多按钮样式 */
+.load-more-container {
+  padding: 10px;
+  text-align: center;
+  border-top: 1px solid #e4e7ed;
+}
+
+.load-more-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.load-more-btn .el-icon {
+  margin-right: 4px;
+}
+</style> 
