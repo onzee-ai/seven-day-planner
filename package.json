@@ -15,7 +15,9 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^20.11.2",
+    "@types/vue-router": "^2.0.0",
     "@vitejs/plugin-vue": "^4.5.2",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
@@ -33,6 +35,9 @@
     "dayjs": "^1.11.10",
     "electron-store": "^8.1.0",
     "element-plus": "^2.4.4",
-    "vue": "^3.3.11"
+    "markdown-it": "^14.1.0",
+    "pinia": "^3.0.1",
+    "vue": "^3.3.11",
+    "vue-router": "^4.5.0"
   }
 }
