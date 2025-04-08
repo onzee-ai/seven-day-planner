@@ -742,6 +742,52 @@ onMounted(async () => {
           </el-button>
         </div>
 
+        <!-- 任务汇总区域 -->
+        <div class="task-summary">
+          <el-card shadow="hover">
+            <div class="summary-content">
+              <div class="summary-item">
+                <div class="summary-label">今日待办</div>
+                <div class="summary-value">{{ 
+                  Array.isArray(currentTasks) ? 
+                  currentTasks.filter(t => !t.completed).length : 0 
+                }}</div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-label">已完成</div>
+                <div class="summary-value">{{ 
+                  Array.isArray(currentTasks) ? 
+                  currentTasks.filter(t => t.completed).length : 0 
+                }}</div>
+              </div>
+              <div class="summary-item">
+                <div class="summary-label">完成率</div>
+                <div class="summary-value">{{ 
+                  Array.isArray(currentTasks) && currentTasks.length > 0 ? 
+                  Math.round((currentTasks.filter(t => t.completed).length / currentTasks.length) * 100) + '%' : 
+                  '0%' 
+                }}</div>
+              </div>
+              <div class="summary-progress">
+                <el-progress 
+                  :percentage="
+                    Array.isArray(currentTasks) && currentTasks.length > 0 ? 
+                    Math.round((currentTasks.filter(t => t.completed).length / currentTasks.length) * 100) : 
+                    0
+                  "
+                  :stroke-width="15"
+                  :format="() => ''"
+                  :status="
+                    (Array.isArray(currentTasks) && currentTasks.length > 0 && 
+                     currentTasks.filter(t => t.completed).length === currentTasks.length) ? 
+                    'success' : ''
+                  "
+                />
+              </div>
+            </div>
+          </el-card>
+        </div>
+
         <el-scrollbar class="tasks-container">
           <div class="task-list">
             <!-- 新目标表单 -->
@@ -1187,5 +1233,64 @@ onMounted(async () => {
   background-color: #f5f5f5;
   border-left: 3px solid #67c23a;
   opacity: 0.85;
+}
+
+.task-summary {
+  margin: 10px 0 20px 0;
+}
+
+.summary-content {
+  display: flex;
+  align-items: center;
+}
+
+.summary-item {
+  flex: 1;
+  text-align: center;
+  padding: 0 10px;
+  border-right: 1px solid #e4e7ed;
+}
+
+.summary-item:last-child {
+  border-right: none;
+}
+
+.summary-label {
+  font-size: 14px;
+  color: #909399;
+  margin-bottom: 5px;
+}
+
+.summary-value {
+  font-size: 24px;
+  font-weight: bold;
+  color: #409EFF;
+}
+
+.summary-value:nth-child(2) {
+  color: #67C23A;
+}
+
+.summary-progress {
+  flex: 2;
+  padding: 0 20px;
+}
+
+@media (max-width: 768px) {
+  .summary-content {
+    flex-direction: column;
+  }
+  
+  .summary-item {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #e4e7ed;
+    padding: 10px 0;
+  }
+  
+  .summary-progress {
+    width: 100%;
+    padding: 10px 0;
+  }
 }
 </style> 
