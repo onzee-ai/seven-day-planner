@@ -73,6 +73,17 @@ ipcMain.handle('set-api-key', async (_event, { keyName, value }) => {
   }
 })
 
+// 删除API密钥
+ipcMain.handle('delete-api-key', async (_event, keyName) => {
+  try {
+    apiKeyStore.delete(keyName)
+    return true
+  } catch (error) {
+    console.error('Error deleting API key:', error)
+    return false
+  }
+})
+
 // 验证DeepSeek API密钥
 ipcMain.handle('validate-deepseek-key', async (_event, apiKey) => {
   try {
@@ -224,6 +235,8 @@ if (process.platform === 'win32') app.setAppUserModelId(app.getName())
 
 let win: BrowserWindow | null = null
 let settingsWin: BrowserWindow | null = null
+let reportWin: BrowserWindow | null = null  // 添加报告窗口引用
+let reportData: any = null  // 添加报告数据存储
 
 // 打开设置窗口
 ipcMain.handle('open-settings', async () => {
@@ -438,3 +451,124 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (!win) createWindow()
 })
+
+// 添加报告相关IPC处理程序
+ipcMain.handle('show-report', async (_, data) => {
+  // 保存报告数据
+  reportData = data
+  
+  // 创建新窗口显示报告
+  await createReportWindow()
+  return true
+})
+
+ipcMain.handle('get-report-data', async () => {
+  // 返回报告数据
+  return reportData
+})
+
+// 添加打开新报告窗口的方法
+ipcMain.handle('open-new-report', async (_, data) => {
+  // 保存新的报告数据
+  reportData = data
+  
+  // 如果报告窗口已存在，先关闭它
+  if (reportWin) {
+    reportWin.close()
+    reportWin = null
+  }
+  
+  // 创建新窗口显示报告
+  await createReportWindow()
+  return true
+})
+
+// 创建报告窗口函数
+async function createReportWindow() {
+  if (reportWin) {
+    reportWin.focus()
+    return
+  }
+  
+  reportWin = new BrowserWindow({
+    title: reportData?.title || '工作日报',
+    width: 800,
+    height: 600,
+    backgroundColor: '#ffffff',
+    parent: win || undefined,
+    modal: false,
+    resizable: true,
+    minimizable: true,
+    maximizable: true,
+    webPreferences: {
+      preload,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+    },
+  })
+  
+  // 窗口关闭时清除引用
+  reportWin.on('closed', () => {
+    reportWin = null
+  })
+  
+  // 开发环境
+  if (process.env.VITE_DEV_SERVER_URL) {
+    await reportWin.loadURL(`${process.env.VITE_DEV_SERVER_URL}#/report`)
+    return
+  }
+  
+  // 生产环境: 加载打包后的Vue应用
+  try {
+    const indexPath = join(app.getAppPath(), 'dist/index.html')
+    
+    if (existsSync(indexPath)) {
+      await reportWin.loadURL(`file://${indexPath}#/report`)
+    } else {
+      // 如找不到index.html，回退到内联HTML
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>工作日报</title>
+            <style>
+              body { 
+                font-family: -apple-system, system-ui, sans-serif; 
+                margin: 0; 
+                padding: 20px;
+                background-color: #ffffff;
+                color: #333;
+              }
+              .container {
+                text-align: center;
+                padding: 20px;
+                border-radius: 12px;
+              }
+              h1 { 
+                color: #42b983;
+                margin-bottom: 20px;
+              }
+              p {
+                line-height: 1.6;
+                font-size: 16px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>工作日报</h1>
+              <p>报告页面加载失败，请重新启动应用。</p>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      await reportWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+    }
+  } catch (error) {
+    console.error('加载报告页面时出错:', error)
+    reportWin.loadURL(`data:text/html,<html><body><h2>加载报告页面出错</h2><p>${error.message}</p></body></html>`)
+  }
+}

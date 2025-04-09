@@ -358,15 +358,6 @@ watch(() => safeAllDates.value, (newDates) => {
           <el-icon><Calendar /></el-icon>
           <span>{{ formatDate(date) }}</span>
           <span v-if="isToday(date)" class="today-mark">(今日)</span>
-          <el-button
-            class="ai-summary-btn"
-            type="text"
-            size="small"
-            @click.stop="openDaySummary(date)"
-          >
-            <el-icon><Reading /></el-icon>
-            总结
-          </el-button>
         </el-menu-item>
         
         <!-- 分组历史记录 -->
@@ -387,7 +378,7 @@ watch(() => safeAllDates.value, (newDates) => {
                 @click.stop="openGroupSummary(yearGroup)"
               >
                 <el-icon><Reading /></el-icon>
-                年报
+                生成/查看年报
               </el-button>
             </div>
             
@@ -409,7 +400,7 @@ watch(() => safeAllDates.value, (newDates) => {
                       @click.stop="openGroupSummary(quarterGroup)"
                     >
                       <el-icon><Reading /></el-icon>
-                      季报
+                      生成/查看季报
                     </el-button>
                   </div>
                   
@@ -431,7 +422,7 @@ watch(() => safeAllDates.value, (newDates) => {
                             @click.stop="openGroupSummary(monthGroup)"
                           >
                             <el-icon><Reading /></el-icon>
-                            月报
+                            生成/查看月报
                           </el-button>
                         </div>
                         
@@ -453,7 +444,7 @@ watch(() => safeAllDates.value, (newDates) => {
                                   @click.stop="openGroupSummary(weekGroup)"
                                 >
                                   <el-icon><Reading /></el-icon>
-                                  周报
+                                  生成/查看周报
                                 </el-button>
                               </div>
                               
@@ -468,15 +459,6 @@ watch(() => safeAllDates.value, (newDates) => {
                                 >
                                   <el-icon><Calendar /></el-icon>
                                   <span>{{ formatDate(date) }}</span>
-                                  <el-button
-                                    class="ai-summary-btn"
-                                    type="text"
-                                    size="small"
-                                    @click.stop="openDaySummary(date)"
-                                  >
-                                    <el-icon><Reading /></el-icon>
-                                    总结
-                                  </el-button>
                                 </el-menu-item>
                               </div>
                             </div>

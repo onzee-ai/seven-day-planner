@@ -13,6 +13,10 @@ declare global {
         set: (keyName: string, value: string) => Promise<boolean>
         validateDeepseek: (apiKey: string) => Promise<boolean>
         validateOpenAI: (apiKey: string) => Promise<boolean>
+        getApiKey: (keyName: string) => Promise<string>
+        setApiKey: (keyName: string, value: string) => Promise<boolean>
+        deleteApiKey: (keyName: string) => Promise<boolean>
+        validateApiKey: (keyName: string) => Promise<boolean>
       },
       ai: {
         generateSummary: (provider: string, prompt: string) => Promise<string>
@@ -20,7 +24,12 @@ declare global {
       settings: {
         open: () => Promise<void>
       },
-      isDev: boolean
+      isDev: boolean,
+      report: {
+        show: (reportData: any) => Promise<boolean>
+        getReportData: () => Promise<any>
+        openNew: (reportData: any) => Promise<boolean>
+      }
     }
   }
 }
@@ -40,7 +49,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     get: (keyName: string) => ipcRenderer.invoke('get-api-key', keyName),
     set: (keyName: string, value: string) => ipcRenderer.invoke('set-api-key', { keyName, value }),
     validateDeepseek: (apiKey: string) => ipcRenderer.invoke('validate-deepseek-key', apiKey),
-    validateOpenAI: (apiKey: string) => ipcRenderer.invoke('validate-openai-key', apiKey)
+    validateOpenAI: (apiKey: string) => ipcRenderer.invoke('validate-openai-key', apiKey),
+    getApiKey: (keyName: string) => ipcRenderer.invoke('get-api-key', keyName),
+    setApiKey: (keyName: string, value: string) => ipcRenderer.invoke('set-api-key', { keyName, value }),
+    deleteApiKey: (keyName: string) => ipcRenderer.invoke('delete-api-key', keyName),
+    validateApiKey: (keyName: string) => ipcRenderer.invoke('validate-api-key', keyName)
   },
   ai: {
     generateSummary: (provider: string, prompt: string) => ipcRenderer.invoke('ai-generate-summary', { provider, prompt })
@@ -53,16 +66,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 报告相关功能
   report: {
     show: (summaryData: any) => ipcRenderer.invoke('show-report', summaryData),
-    getReportData: () => new Promise((resolve) => {
-      const handleReportData = (_event: Electron.IpcRendererEvent, data: any) => {
-        resolve(data)
-        // 接收到数据后移除监听器
-        ipcRenderer.removeListener('report-data', handleReportData)
-      }
-      
-      // 监听来自主进程的报告数据
-      ipcRenderer.on('report-data', handleReportData)
-    })
+    getReportData: () => ipcRenderer.invoke('get-report-data'),
+    openNew: (reportData: any) => ipcRenderer.invoke('open-new-report', reportData)
   }
 })
 

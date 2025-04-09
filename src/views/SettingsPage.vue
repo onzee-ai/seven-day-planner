@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Setting, Key } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Setting, Key, Delete } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -109,6 +109,47 @@ const saveOpenAIKey = async () => {
   }
 }
 
+// 删除API密钥
+const deleteApiKey = async (provider: 'deepseek' | 'openai') => {
+  try {
+    if (!window.electronAPI?.apiKeys?.deleteApiKey) {
+      ElMessage.error('删除API密钥功能不可用')
+      return
+    }
+    
+    await ElMessageBox.confirm(
+      `确定要删除${provider === 'deepseek' ? 'DeepSeek' : 'OpenAI'} API密钥吗？`,
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    const result = await window.electronAPI.apiKeys.deleteApiKey(provider)
+    if (result) {
+      ElMessage.success('API密钥已删除')
+      // 更新状态
+      if (provider === 'deepseek') {
+        deepseekKey.value = ''
+        deepseekValidated.value = false
+      } else {
+        openaiKey.value = ''
+        openaiValidated.value = false
+      }
+    } else {
+      ElMessage.error('删除API密钥失败')
+    }
+  } catch (error) {
+    // 用户取消操作
+    if (error !== 'cancel') {
+      console.error(`[SettingsPage] Failed to delete ${provider} API key:`, error)
+      ElMessage.error('删除API密钥失败')
+    }
+  }
+}
+
 // 生命周期钩子
 onMounted(async () => {
   await loadKeys()
@@ -147,6 +188,14 @@ onMounted(async () => {
             >
               保存并验证
             </el-button>
+            <el-button 
+              v-if="deepseekValidated"
+              type="danger" 
+              :icon="Delete"
+              @click="deleteApiKey('deepseek')"
+            >
+              删除
+            </el-button>
           </div>
           <p class="api-key-hint">
             <span v-if="deepseekValidated" class="validated-hint">✓ API密钥已验证</span>
@@ -169,6 +218,14 @@ onMounted(async () => {
               @click="saveOpenAIKey"
             >
               保存并验证
+            </el-button>
+            <el-button 
+              v-if="openaiValidated"
+              type="danger" 
+              :icon="Delete"
+              @click="deleteApiKey('openai')"
+            >
+              删除
             </el-button>
           </div>
           <p class="api-key-hint">

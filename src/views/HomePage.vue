@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import dayjs from 'dayjs'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -11,11 +11,15 @@ import {
   Timer,
   Right,
   Delete,
-  FolderOpened
+  FolderOpened,
+  ArrowUp,
+  ArrowDown
 } from '@element-plus/icons-vue'
 import HistoryPanel from '../components/HistoryPanel.vue'
 import { DevTools } from '../testData'
+// @ts-ignore
 import { useRouter } from 'vue-router'
+import AISummaryDialog from '../components/AISummaryDialog.vue'
 
 const router = useRouter()
 
@@ -36,12 +40,21 @@ const newTask = ref<{
 const hasMoreDates = ref(false) // 是否还有更多历史日期可加载
 const isLoadingMore = ref(false) // 是否正在加载更多
 const showNewTaskForm = ref(false) // 是否显示新任务表单
+const showTaskList = ref(false) // 是否显示任务列表，默认收起
 
 // 临时截止时间编辑值
 const tempDueTime = ref<Date | null>(null)
 const editingTaskId = ref<string | null>(null)
 const editingTitleTaskId = ref<string | null>(null) // 添加标题编辑状态
 const editingTitle = ref<string>('') // 用于编辑标题的临时变量
+
+const aiSummaryDialogVisible = ref(false) // 添加控制AISummaryDialog显示的变量
+const summaryDate = ref('') // 添加当前总结的日期
+const summaryType = ref<'day' | 'week' | 'month' | 'quarter' | 'year'>('day') // 添加总结类型
+// 设置相关变量
+const settingsDialogVisible = ref(false) // 设置对话框是否显示
+const settingsActiveTab = ref('general') // 设置对话框当前激活的标签
+const targetApiProvider = ref<'deepseek' | 'openai'>('deepseek') // 目标API提供商
 
 // 类型定义
 interface Task {
@@ -95,6 +108,15 @@ const currentTasks = computed(() => {
     console.error('[HomePage] Error in currentTasks computation:', error);
     return [];
   }
+})
+
+// 添加两个计算属性，分别获取未完成和已完成的任务
+const pendingTasks = computed(() => {
+  return currentTasks.value.filter(task => !task.completed)
+})
+
+const completedTasks = computed(() => {
+  return currentTasks.value.filter(task => task.completed)
 })
 
 // 方法
@@ -164,6 +186,10 @@ const cancelAddTask = () => {
 }
 
 const updateTask = (task: Task) => {
+  debouncedSave()
+}
+
+const handleTaskStatusChange = (task: Task) => {
   debouncedSave()
 }
 
@@ -425,147 +451,18 @@ const openSettings = () => {
   }
 }
 
-// 生成AI摘要报告
-const generateReport = async () => {
+// 修改查看报告函数
+const viewReport = async () => {
   try {
-    // 清除之前的临时报告数据（防止缓存过期数据）
-    localStorage.removeItem('temp-report-data')
+    // 设置当前日期和总结类型
+    summaryDate.value = currentDate.value
+    summaryType.value = 'day' // 日报类型
     
-    // 检查是否有任务
-    if (tasks.value.length === 0) {
-      ElMessage.warning('没有任务数据，无法生成报告')
-      return
-    }
-    
-    // 检查当前日期是否有任务
-    const currentDateTasks = tasks.value.filter(t => t.date === currentDate.value)
-    if (currentDateTasks.length === 0) {
-      ElMessage.warning(`${currentDate.value} 没有任务数据，无法生成报告`)
-      return
-    }
-    
-    // 检查API密钥是否设置
-    if (!window.electronAPI?.ai) {
-      ElMessage.warning('AI功能不可用，使用模拟报告数据')
-      
-      // 创建模拟报告数据
-      const mockReportData = {
-        title: `${currentDate.value} 工作日报`,
-        content: `# ${currentDate.value} 工作日报\n\n## 任务完成情况\n\n今天共计划了 ${currentDateTasks.length} 个任务，其中完成了 ${currentDateTasks.filter(t => t.completed).length} 个任务。\n\n## 详细内容\n\n${currentDateTasks.map(t => `- ${t.title}: ${t.completed ? '已完成' : '未完成'}`).join('\n')}\n\n## 总结\n\n这是一份模拟生成的报告，由于AI功能不可用，仅显示基本信息。`,
-        date: currentDate.value,
-        type: 'daily',
-        provider: 'mock',
-        createdAt: Date.now()
-      }
-      
-      try {
-        // 存储报告数据并使用路由导航
-        localStorage.setItem('temp-report-data', JSON.stringify(mockReportData))
-        
-        // 延迟跳转，确保数据已保存
-        setTimeout(() => {
-          router.push('/report')
-        }, 100)
-      } catch (err) {
-        console.error('[HomePage] Failed to save mock report data:', err)
-        ElMessage.error('保存报告数据失败')
-      }
-      return
-    }
-    
-    ElMessage.info('正在生成报告，请稍候...')
-    
-    // 构建提示词
-    const tasksForPrompt = currentDateTasks
-      .map(t => {
-        return `- 任务: ${t.title}\n  状态: ${t.completed ? '已完成' : '未完成'}\n  详情: ${t.notes || '无'}\n  结果: ${t.result || '无'}`
-      })
-      .join('\n\n')
-    
-    const prompt = `请根据以下任务列表，生成一份日报总结，包括完成情况分析、存在的问题、以及改进建议：\n\n${tasksForPrompt}`
-    
-    // 调用AI生成摘要
-    // 默认使用DeepSeek，如果失败则尝试OpenAI
-    let provider = 'deepseek'
-    let reportContent = null
-    
-    try {
-      reportContent = await window.electronAPI.ai.generateSummary(provider, prompt)
-    } catch (error) {
-      console.error('[HomePage] DeepSeek AI generation failed, trying OpenAI:', error)
-      try {
-        provider = 'openai'
-        reportContent = await window.electronAPI.ai.generateSummary(provider, prompt)
-      } catch (innerError) {
-        console.error('[HomePage] Both AI providers failed:', innerError)
-        throw new Error('所有AI提供商都无法生成报告')
-      }
-    }
-    
-    if (!reportContent) {
-      throw new Error('生成报告内容为空')
-    }
-    
-    // 创建报告数据
-    const reportData = {
-      title: `${currentDate.value} 工作日报`,
-      content: reportContent,
-      date: currentDate.value,
-      type: 'daily',
-      provider: provider,
-      createdAt: Date.now()
-    }
-    
-    // 显示报告
-    if (window.electronAPI?.report) {
-      try {
-        const showResult = await window.electronAPI.report.show(reportData)
-        if (!showResult) {
-          // 如果展示失败，使用路由导航作为后备方案
-          try {
-            localStorage.setItem('temp-report-data', JSON.stringify(reportData))
-            
-            // 延迟跳转，确保数据已保存
-            setTimeout(() => {
-              router.push('/report')
-            }, 100)
-          } catch (err) {
-            console.error('[HomePage] Failed to save report data:', err)
-            ElMessage.error('保存报告数据失败')
-          }
-        }
-      } catch (error) {
-        console.error('[HomePage] Failed to show report window:', error)
-        // 使用路由导航作为后备方案
-        try {
-          localStorage.setItem('temp-report-data', JSON.stringify(reportData))
-          
-          // 延迟跳转，确保数据已保存
-          setTimeout(() => {
-            router.push('/report')
-          }, 100)
-        } catch (err) {
-          console.error('[HomePage] Failed to save report data after window error:', err)
-          ElMessage.error('保存报告数据失败')
-        }
-      }
-    } else {
-      // 存储报告数据并使用路由导航
-      try {
-        localStorage.setItem('temp-report-data', JSON.stringify(reportData))
-        
-        // 延迟跳转，确保数据已保存
-        setTimeout(() => {
-          router.push('/report')
-        }, 100)
-      } catch (err) {
-        console.error('[HomePage] Failed to save report data:', err)
-        ElMessage.error('保存报告数据失败')
-      }
-    }
+    // 显示总结对话框
+    aiSummaryDialogVisible.value = true
   } catch (error: any) {
-    console.error('[HomePage] Failed to generate report:', error)
-    ElMessage.error(`生成报告失败: ${error.message || '未知错误'}`)
+    console.error('[HomePage] Failed to view report:', error)
+    ElMessage.error(`查看报告失败: ${error.message || '未知错误'}`)
   }
 }
 
@@ -692,11 +589,73 @@ onMounted(async () => {
     
     // 加载任务
     await loadTasks()
+
+    // 添加自定义报告选择按钮样式
+    const style = document.createElement('style')
+    style.innerHTML = `
+      .report-options-dialog .el-message-box__btns {
+        justify-content: center;
+        padding-top: 20px;
+        display: flex;
+        flex-wrap: wrap;
+      }
+      .ai-model-btn {
+        margin: 10px 5px !important;
+        min-width: 120px;
+      }
+      .ai-model-btn.deepseek {
+        background-color: #9254de;
+        border-color: #9254de;
+        color: white;
+      }
+      .ai-model-btn.openai {
+        background-color: #10b981;
+        border-color: #10b981;
+        color: white;
+      }
+      .ai-model-btn.local {
+        background-color: #409eff;
+        border-color: #409eff;
+        color: white;
+      }
+      .cancel-btn {
+        margin: 10px 5px !important;
+        min-width: 120px;
+      }
+    `
+    document.head.appendChild(style)
+
+    // 不再需要注入的操作，因为我们直接查看报告而不是弹出选择框
   } catch (error: any) {
     console.error('[HomePage] Initialization error:', error)
     ElMessage.error(`初始化失败: ${error.message}`)
   }
 })
+
+// 添加openSettingsModal方法
+const openSettingsModal = (provider: 'deepseek' | 'openai') => {
+  // 隐藏当前的Summary对话框
+  aiSummaryDialogVisible.value = false
+  
+  // 显示设置对话框
+  settingsDialogVisible.value = true
+  
+  // 设置初始选中的标签为API设置
+  settingsActiveTab.value = 'apis'
+  
+  // 设置目标提供商，以便可以聚焦到相应的输入框
+  targetApiProvider.value = provider
+  
+  // 确保下一个渲染周期后设置焦点
+  nextTick(() => {
+    // 尝试聚焦到对应的输入框
+    const inputId = `${provider}-api-key-input`
+    const inputElement = document.getElementById(inputId)
+    if (inputElement) {
+      inputElement.focus()
+    }
+  })
+}
 </script>
 
 <template>
@@ -705,14 +664,11 @@ onMounted(async () => {
       <div class="title">
         <span class="icon">📋</span> 七日计划
         <div class="actions">
-          <el-button type="primary" size="small" @click="refreshTasks">
-            <el-icon><Refresh /></el-icon> 刷新
-          </el-button>
           <el-button type="primary" size="small" @click="openSettings">
             <el-icon><Setting /></el-icon> 设置
           </el-button>
-          <el-button type="success" size="small" @click="generateReport">
-            <el-icon><FolderOpened /></el-icon> 生成日报
+          <el-button type="success" size="small" @click="viewReport">
+            <el-icon><FolderOpened /></el-icon> 查看日报
           </el-button>
         </div>
       </div>
@@ -742,47 +698,119 @@ onMounted(async () => {
           </el-button>
         </div>
 
-        <!-- 任务汇总区域 -->
+        <!-- 任务汇总区域（紧凑型） -->
         <div class="task-summary">
-          <el-card shadow="hover">
-            <div class="summary-content">
-              <div class="summary-item">
-                <div class="summary-label">今日待办</div>
-                <div class="summary-value">{{ 
-                  Array.isArray(currentTasks) ? 
-                  currentTasks.filter(t => !t.completed).length : 0 
-                }}</div>
-              </div>
-              <div class="summary-item">
-                <div class="summary-label">已完成</div>
-                <div class="summary-value">{{ 
-                  Array.isArray(currentTasks) ? 
-                  currentTasks.filter(t => t.completed).length : 0 
-                }}</div>
-              </div>
-              <div class="summary-item">
-                <div class="summary-label">完成率</div>
-                <div class="summary-value">{{ 
-                  Array.isArray(currentTasks) && currentTasks.length > 0 ? 
-                  Math.round((currentTasks.filter(t => t.completed).length / currentTasks.length) * 100) + '%' : 
-                  '0%' 
-                }}</div>
-              </div>
-              <div class="summary-progress">
-                <el-progress 
-                  :percentage="
+          <el-card shadow="hover" :body-style="{ padding: '10px' }">
+            <div class="summary-compact">
+              <div class="summary-stats-compact">
+                <div class="stat-item-compact">
+                  <div class="stat-value">{{ 
+                    Array.isArray(currentTasks) ? 
+                    currentTasks.filter(t => !t.completed).length : 0 
+                  }}</div>
+                  <div class="stat-label">待办</div>
+                </div>
+                <div class="stat-item-compact">
+                  <div class="stat-value">{{ 
+                    Array.isArray(currentTasks) ? 
+                    currentTasks.filter(t => t.completed).length : 0 
+                  }}</div>
+                  <div class="stat-label">已完成</div>
+                </div>
+                <div class="stat-item-compact">
+                  <div class="stat-value">{{ 
                     Array.isArray(currentTasks) && currentTasks.length > 0 ? 
-                    Math.round((currentTasks.filter(t => t.completed).length / currentTasks.length) * 100) : 
-                    0
-                  "
-                  :stroke-width="15"
-                  :format="() => ''"
-                  :status="
-                    (Array.isArray(currentTasks) && currentTasks.length > 0 && 
-                     currentTasks.filter(t => t.completed).length === currentTasks.length) ? 
-                    'success' : ''
-                  "
-                />
+                    Math.round((currentTasks.filter(t => t.completed).length / currentTasks.length) * 100) + '%' : 
+                    '0%' 
+                  }}</div>
+                  <div class="stat-label">完成率</div>
+                </div>
+                
+                <el-button 
+                  type="text" 
+                  size="small" 
+                  class="toggle-list-btn"
+                  @click="showTaskList = !showTaskList"
+                >
+                  {{ showTaskList ? '收起目标列表' : '展开目标列表' }}
+                  <el-icon>
+                    <component :is="showTaskList ? 'ArrowUp' : 'ArrowDown'" />
+                  </el-icon>
+                </el-button>
+              </div>
+              
+              <el-progress 
+                class="summary-progress-compact"
+                :percentage="
+                  Array.isArray(currentTasks) && currentTasks.length > 0 ? 
+                  Math.round((currentTasks.filter(t => t.completed).length / currentTasks.length) * 100) : 
+                  0
+                "
+                :stroke-width="8"
+                :format="() => ''"
+                :status="
+                  (Array.isArray(currentTasks) && currentTasks.length > 0 && 
+                   currentTasks.filter(t => t.completed).length === currentTasks.length) ? 
+                  'success' : ''
+                "
+              />
+              
+              <div v-if="showTaskList" class="task-list-compact">
+                <div v-if="!Array.isArray(currentTasks) || currentTasks.length === 0" class="no-tasks">
+                  今日暂无目标，点击"添加新目标"开始规划您的一天
+                </div>
+                <div v-else class="task-list-columns">
+                  <!-- 左侧：未完成任务 -->
+                  <div class="task-column">
+                    <div class="column-header">
+                      <span class="column-title">待办</span>
+                      <span class="task-count">{{ Array.isArray(currentTasks) ? currentTasks.filter(t => !t.completed).length : 0 }}</span>
+                    </div>
+                    <div class="column-content">
+                      <div 
+                        v-for="task in pendingTasks" 
+                        :key="task.id" 
+                        class="task-item-compact"
+                      >
+                        <el-checkbox 
+                          v-model="task.completed" 
+                          @change="handleTaskStatusChange(task)"
+                        >
+                          <span>{{ task.title || '无标题' }}</span>
+                        </el-checkbox>
+                      </div>
+                      <div v-if="pendingTasks.length === 0" class="column-empty">
+                        无待办任务
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <!-- 右侧：已完成任务 -->
+                  <div class="task-column">
+                    <div class="column-header">
+                      <span class="column-title">已完成</span>
+                      <span class="task-count">{{ Array.isArray(currentTasks) ? currentTasks.filter(t => t.completed).length : 0 }}</span>
+                    </div>
+                    <div class="column-content">
+                      <div 
+                        v-for="task in completedTasks" 
+                        :key="task.id" 
+                        class="task-item-compact completed-item"
+                      >
+                        <el-checkbox 
+                          v-model="task.completed" 
+                          @change="handleTaskStatusChange(task)"
+                          class="completed-task"
+                        >
+                          <span class="completed-text">{{ task.title || '无标题' }}</span>
+                        </el-checkbox>
+                      </div>
+                      <div v-if="completedTasks.length === 0" class="column-empty">
+                        无已完成任务
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </el-card>
@@ -845,7 +873,7 @@ onMounted(async () => {
               <div class="task-header">
                 <el-checkbox 
                   v-model="task.completed"
-                  @change="updateTask(task)"
+                  @change="handleTaskStatusChange(task)"
                 >
                   <span 
                     v-if="editingTitleTaskId !== task.id"
@@ -970,6 +998,15 @@ onMounted(async () => {
         </el-scrollbar>
       </div>
     </div>
+
+    <!-- 添加AISummaryDialog组件 -->
+    <AISummaryDialog 
+      :modelVisible="aiSummaryDialogVisible"
+      @update:modelVisible="aiSummaryDialogVisible = $event"
+      :date="summaryDate"
+      :summaryType="summaryType"
+      @open-settings="openSettingsModal"
+    />
   </div>
 </template>
 
@@ -1236,61 +1273,148 @@ onMounted(async () => {
 }
 
 .task-summary {
-  margin: 10px 0 20px 0;
+  margin: 5px 0 10px 0;
 }
 
-.summary-content {
+.summary-compact {
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-stats-compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 5px;
+}
+
+.stat-item-compact {
+  text-align: center;
+  flex: 1;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: bold;
+  color: #409EFF;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 2px;
+}
+
+.toggle-list-btn {
+  font-size: 12px;
+  color: #909399;
   display: flex;
   align-items: center;
 }
 
-.summary-item {
-  flex: 1;
+.summary-progress-compact {
+  margin: 8px 0;
+}
+
+.task-list-compact {
+  max-height: 150px;
+  overflow-y: auto;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 5px;
+  padding-top: 5px;
+}
+
+.task-item-compact {
+  padding: 4px 0;
+  border-bottom: 1px dashed #f0f0f0;
+  font-size: 13px;
+}
+
+.task-item-compact:last-child {
+  border-bottom: none;
+}
+
+.no-tasks {
   text-align: center;
-  padding: 0 10px;
-  border-right: 1px solid #e4e7ed;
-}
-
-.summary-item:last-child {
-  border-right: none;
-}
-
-.summary-label {
-  font-size: 14px;
   color: #909399;
-  margin-bottom: 5px;
+  padding: 8px 0;
+  font-size: 12px;
 }
 
-.summary-value {
-  font-size: 24px;
-  font-weight: bold;
+.completed-task {
+  opacity: 0.7;
+}
+
+.completed-text {
+  text-decoration: line-through;
+  color: #909399;
+}
+
+.task-list-columns {
+  display: flex;
+  gap: 10px;
+}
+
+.task-column {
+  flex: 1;
+  min-width: 0; /* 防止flex子项溢出 */
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  background-color: #fafafa;
+}
+
+.column-header {
+  padding: 6px 8px;
+  background-color: #f5f7fa;
+  border-bottom: 1px solid #ebeef5;
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.column-title {
+  font-weight: 600;
+  color: #606266;
+}
+
+.task-count {
+  background-color: #ecf5ff;
   color: #409EFF;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-size: 11px;
 }
 
-.summary-value:nth-child(2) {
-  color: #67C23A;
+.column-content {
+  padding: 5px 8px;
+  max-height: 80px;
+  overflow-y: auto;
 }
 
-.summary-progress {
-  flex: 2;
-  padding: 0 20px;
+.completed-item {
+  opacity: 0.8;
+}
+
+.column-empty {
+  text-align: center;
+  color: #909399;
+  font-size: 12px;
+  padding: 8px 0;
+  font-style: italic;
 }
 
 @media (max-width: 768px) {
-  .summary-content {
+  .summary-header {
     flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
   }
   
-  .summary-item {
+  .summary-stats {
     width: 100%;
-    border-right: none;
-    border-bottom: 1px solid #e4e7ed;
-    padding: 10px 0;
-  }
-  
-  .summary-progress {
-    width: 100%;
-    padding: 10px 0;
+    justify-content: space-between;
   }
 }
 </style> 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, inject, watchEffect, readonly } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Document, Printer, ArrowLeft } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Document, Printer, ArrowLeft, Refresh } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import { useRouter } from 'vue-router'
 
@@ -186,6 +186,169 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   cleanup()
 })
+
+// 添加重新生成报告的方法
+const regenerateReport = async (provider: 'local' | 'deepseek' | 'openai') => {
+  if (isUnmounted.value || !reportData.value) return
+  
+  try {
+    const currentDate = reportData.value.date
+    
+    // 确认重新生成
+    await ElMessageBox.confirm(
+      `确定要使用${provider === 'local' ? '本地' : provider === 'deepseek' ? 'DeepSeek' : 'OpenAI'}重新生成报告吗？`,
+      '重新生成报告',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    ElMessage.info(`正在使用${provider === 'local' ? '本地' : provider}重新生成报告，请稍候...`)
+    
+    // 打开新窗口生成报告
+    if (window.electronAPI?.report) {
+      // 使用Electron API生成
+      if (!window.electronAPI.store) {
+        throw new Error('存储API不可用')
+      }
+      
+      const tasksForDate = await window.electronAPI.store.get('tasks')
+      if (!Array.isArray(tasksForDate) || tasksForDate.length === 0) {
+        throw new Error('无法获取任务数据')
+      }
+      
+      const currentDateTasks = tasksForDate.filter(t => t.date === currentDate)
+      if (currentDateTasks.length === 0) {
+        throw new Error(`${currentDate} 没有任务数据`)
+      }
+      
+      // 根据provider决定生成方式
+      let newReportData
+      
+      if (provider === 'local') {
+        // 本地生成
+        newReportData = generateLocalReport(currentDateTasks, currentDate)
+      } else {
+        // AI生成
+        if (!window.electronAPI?.ai) {
+          throw new Error('AI功能不可用')
+        }
+        
+        // 构建提示词
+        const tasksForPrompt = currentDateTasks
+          .map(t => {
+            return `- 任务: ${t.title}\n  状态: ${t.completed ? '已完成' : '未完成'}\n  详情: ${t.notes || '无'}\n  结果: ${t.result || '无'}`
+          })
+          .join('\n\n')
+        
+        const prompt = `请根据以下任务列表，生成一份简洁的日报总结，重点突出做了什么和没做什么，语言精炼，排版清晰：\n\n${tasksForPrompt}`
+        
+        // 调用指定的AI模型生成摘要
+        const reportContent = await window.electronAPI.ai.generateSummary(provider, prompt)
+        
+        if (!reportContent) {
+          throw new Error('生成报告内容为空')
+        }
+        
+        newReportData = {
+          title: `${currentDate} 工作日报 (${provider === 'deepseek' ? 'DeepSeek' : 'OpenAI'}生成)`,
+          content: reportContent,
+          date: currentDate,
+          type: 'daily',
+          provider: provider,
+          createdAt: Date.now()
+        }
+      }
+      
+      // 在新窗口显示
+      if (newReportData) {
+        // 处理不同Electron API版本的兼容性
+        if (window.electronAPI?.report) {
+          // 使用类型断言确保TypeScript编译通过
+          const reportApi = window.electronAPI.report as any;
+          if (!reportApi.openNew) {
+            // 如果openNew方法不存在，使用show方法作为后备
+            await reportApi.show(newReportData);
+          } else {
+            // 使用openNew方法
+            await reportApi.openNew(newReportData);
+          }
+        }
+      }
+    } else {
+      // Web环境，使用路由导航
+      router.push('/')
+      
+      // 延迟执行以确保先返回首页
+      setTimeout(() => {
+        if (provider === 'local') {
+          // 触发本地生成
+          localStorage.setItem('regenerate-report', JSON.stringify({
+            provider: 'local',
+            date: currentDate
+          }))
+        } else {
+          // 触发AI生成
+          localStorage.setItem('regenerate-report', JSON.stringify({
+            provider: provider,
+            date: currentDate
+          }))
+        }
+      }, 300)
+    }
+  } catch (error: any) {
+    // 如果用户取消，不显示错误
+    if (error && error.toString().includes('cancel')) {
+      return
+    }
+    console.error(`[ReportPage] Failed to regenerate report with ${provider}:`, error)
+    ElMessage.error(`重新生成报告失败: ${error.message || '未知错误'}`)
+  }
+}
+
+// 本地生成简洁报告
+const generateLocalReport = (tasks: any[], date: string) => {
+  // 计算统计数据
+  const totalTasks = tasks.length
+  const completedTasks = tasks.filter(t => t.completed)
+  const pendingTasks = tasks.filter(t => !t.completed)
+  
+  // 生成报告内容
+  const content = `# ${date} 工作日报
+
+## 今日完成 (${completedTasks.length}/${totalTasks})
+
+${completedTasks.length > 0 
+  ? completedTasks.map(t => `- ${t.title}${t.result ? `\n  _结果: ${t.result}_` : ''}`).join('\n') 
+  : '- 今日无完成任务'}
+
+## 未完成 (${pendingTasks.length}/${totalTasks})
+
+${pendingTasks.length > 0 
+  ? pendingTasks.map(t => `- ${t.title}`).join('\n') 
+  : '- 无未完成任务'}
+
+## 简要总结
+
+- 完成率: ${totalTasks > 0 ? Math.round((completedTasks.length / totalTasks) * 100) : 0}%
+- 计划任务: ${totalTasks}项
+- 已完成: ${completedTasks.length}项
+- 未完成: ${pendingTasks.length}项
+
+_此报告由系统自动生成，无需AI_`
+
+  // 创建报告数据
+  return {
+    title: `${date} 工作日报 (本地生成)`,
+    content: content,
+    date: date,
+    type: 'daily',
+    provider: 'local',
+    createdAt: Date.now()
+  }
+}
 </script>
 
 <template>
@@ -198,8 +361,19 @@ onBeforeUnmount(() => {
       <div class="report-header">
         <h1 class="report-title">{{ reportData.title }}</h1>
         <div class="report-meta">
-          <div class="report-provider">由 {{ reportData.provider === 'deepseek' ? 'DeepSeek' : reportData.provider === 'mock' ? '模拟数据' : 'OpenAI' }} AI 生成</div>
+          <div class="report-provider">由 {{ reportData.provider === 'deepseek' ? 'DeepSeek' : reportData.provider === 'openai' ? 'OpenAI' : reportData.provider === 'local' ? '本地' : '模拟数据' }} 生成</div>
           <div class="report-actions">
+            <el-button-group class="mr-10">
+              <el-button type="success" @click="regenerateReport('local')">
+                <el-icon><Document /></el-icon> 本地生成
+              </el-button>
+              <el-button type="primary" @click="regenerateReport('deepseek')">
+                <el-icon><Document /></el-icon> DeepSeek
+              </el-button>
+              <el-button type="warning" @click="regenerateReport('openai')">
+                <el-icon><Document /></el-icon> OpenAI
+              </el-button>
+            </el-button-group>
             <el-button type="primary" @click="copyReport">
               <el-icon><Document /></el-icon> 复制内容
             </el-button>
@@ -269,6 +443,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: center;
   margin-top: 20px;
+  flex-wrap: wrap;
 }
 
 .report-provider {
@@ -398,6 +573,39 @@ onBeforeUnmount(() => {
   .report-content {
     box-shadow: none;
     padding: 0;
+  }
+}
+
+.mr-10 {
+  margin-right: 10px;
+}
+
+@media (max-width: 768px) {
+  .report-meta {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  
+  .report-actions {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .el-button-group {
+    width: 100%;
+    display: flex;
+  }
+  
+  .el-button-group .el-button {
+    flex: 1;
+  }
+  
+  .mr-10 {
+    margin-right: 0;
+    margin-bottom: 10px;
   }
 }
 </style> 
