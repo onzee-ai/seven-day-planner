@@ -51,7 +51,7 @@ const newTask = ref<{
 const hasMoreDates = ref(false) // 是否还有更多历史日期可加载
 const isLoadingMore = ref(false) // 是否正在加载更多
 const showNewTaskForm = ref(false) // 是否显示新任务表单
-const showTaskList = ref(false) // 是否显示任务列表，默认收起
+const showTaskList = ref(true) // 目标列表默认展开
 
 // 临时截止时间编辑值
 const tempDueTime = ref<Date | null>(null)
@@ -66,6 +66,9 @@ const summaryType = ref<'day' | 'week' | 'month' | 'quarter' | 'year'>('day') //
 const settingsDialogVisible = ref(false) // 设置对话框是否显示
 const settingsActiveTab = ref('general') // 设置对话框当前激活的标签
 const targetApiProvider = ref<'deepseek' | 'openai'>('deepseek') // 目标API提供商
+
+// 添加一个新的 ref 变量来追踪最近添加的任务
+const recentlyAddedTaskId = ref<string | null>(null);
 
 // 类型定义
 interface Task {
@@ -184,6 +187,14 @@ const addTask = () => {
 
   tasks.value.push(task)
   saveTasks()
+  
+  // 设置最近添加的任务ID
+  recentlyAddedTaskId.value = task.id
+  
+  // 1秒后移除高亮效果
+  setTimeout(() => {
+    recentlyAddedTaskId.value = null
+  }, 1000)
   
   // 清空表单并准备添加下一个任务
   newTask.value = { title: '', notes: '', dueTime: undefined, dueTimeValue: null }
@@ -358,7 +369,7 @@ const debouncedSave = () => {
   }, 1000)
 }
 
-// 添加自动保存新任务
+// 修改 autoSaveTask 函数
 const autoSaveTask = () => {
   // 如果标题不为空，则保存
   if (newTask.value.title.trim()) {
@@ -374,6 +385,14 @@ const autoSaveTask = () => {
 
     tasks.value.push(task)
     saveTasks()
+    
+    // 设置最近添加的任务ID
+    recentlyAddedTaskId.value = task.id
+    
+    // 1秒后移除高亮效果
+    setTimeout(() => {
+      recentlyAddedTaskId.value = null
+    }, 1000)
     
     // 清空表单并准备添加下一个任务
     newTask.value = { title: '', notes: '', dueTime: undefined, dueTimeValue: null }
@@ -853,54 +872,64 @@ const openSettingsModal = (provider: 'deepseek' | 'openai') => {
               </div>
             </el-card>
 
-            <el-card v-for="task in currentTasks" :key="task.id" class="task-item" :class="{'task-item-completed': task.completed}">
+            <el-card 
+              v-for="task in currentTasks" 
+              :key="task.id" 
+              class="task-item" 
+              :class="{
+                'task-item-completed': task.completed,
+                'task-item-highlight': task.id === recentlyAddedTaskId
+              }"
+            >
               <div class="task-header">
-                <el-checkbox 
-                  v-model="task.completed"
-                  @change="handleTaskStatusChange(task)"
-                >
-                  <span 
-                    v-if="editingTitleTaskId !== task.id"
-                    class="task-title" 
-                    :class="{ 'completed': task.completed }"
-                    @click.stop="editTaskTitle(task)"
+                <div class="task-title-row">
+                  <el-checkbox 
+                    v-model="task.completed"
+                    @change="handleTaskStatusChange(task)"
                   >
-                    {{ task.title }}
-                    <el-tag v-if="task.completed" size="small" type="success" class="completed-tag">已完成</el-tag>
-                  </span>
-                  <el-input
-                    v-else
-                    v-model="editingTitle"
-                    class="task-title-input"
-                    :class="{ 'completed': task.completed }"
-                    @blur="saveTaskTitle(task)"
-                    @keyup.enter="saveTaskTitle(task)"
-                    @keyup.esc="cancelTitleEdit"
-                    placeholder="输入目标内容"
-                    autofocus
-                  />
-                </el-checkbox>
-                
-                <div class="task-actions">
-                  <el-button-group>
-                    <el-tooltip content="移至明天" placement="top" effect="light">
-                      <el-button 
-                        v-if="!task.completed" 
-                        size="small" 
-                        @click="moveToTomorrow(task)"
-                      >
-                        <el-icon><Right /></el-icon>
-                      </el-button>
-                    </el-tooltip>
-                    <el-tooltip content="删除任务" placement="top" effect="light">
-                      <el-button 
-                        size="small" 
-                        @click="deleteTask(task)"
-                      >
-                        <el-icon><Delete /></el-icon>
-                      </el-button>
-                    </el-tooltip>
-                  </el-button-group>
+                    <span 
+                      v-if="editingTitleTaskId !== task.id"
+                      class="task-title" 
+                      :class="{ 'completed': task.completed }"
+                      @click.stop="editTaskTitle(task)"
+                    >
+                      {{ task.title }}
+                      <el-tag v-if="task.completed" size="small" type="success" class="completed-tag">已完成</el-tag>
+                    </span>
+                    <el-input
+                      v-else
+                      v-model="editingTitle"
+                      class="task-title-input"
+                      :class="{ 'completed': task.completed }"
+                      @blur="saveTaskTitle(task)"
+                      @keyup.enter="saveTaskTitle(task)"
+                      @keyup.esc="cancelTitleEdit"
+                      placeholder="输入目标内容"
+                      autofocus
+                    />
+                  </el-checkbox>
+                  
+                  <div class="task-actions inline-actions">
+                    <el-button-group>
+                      <el-tooltip content="移至明天" placement="top" effect="light">
+                        <el-button 
+                          v-if="!task.completed" 
+                          size="small" 
+                          @click="moveToTomorrow(task)"
+                        >
+                          <el-icon><Right /></el-icon>
+                        </el-button>
+                      </el-tooltip>
+                      <el-tooltip content="删除任务" placement="top" effect="light">
+                        <el-button 
+                          size="small" 
+                          @click="deleteTask(task)"
+                        >
+                          <el-icon><Delete /></el-icon>
+                        </el-button>
+                      </el-tooltip>
+                    </el-button-group>
+                  </div>
                 </div>
               </div>
 
@@ -1302,8 +1331,9 @@ const openSettingsModal = (provider: 'deepseek' | 'openai') => {
 }
 
 .task-list-compact {
-  max-height: 150px;
-  overflow-y: auto;
+  /* 移除最大高度限制和滚动条 */
+  /* max-height: 150px; */
+  /* overflow-y: auto; */
   border-top: 1px solid #f0f0f0;
   margin-top: 5px;
   padding-top: 5px;
@@ -1373,8 +1403,9 @@ const openSettingsModal = (provider: 'deepseek' | 'openai') => {
 
 .column-content {
   padding: 5px 8px;
-  max-height: 80px;
-  overflow-y: auto;
+  /* 移除最大高度限制和滚动条 */
+  /* max-height: 80px; */
+  /* overflow-y: auto; */
 }
 
 .completed-item {
@@ -1399,6 +1430,42 @@ const openSettingsModal = (provider: 'deepseek' | 'openai') => {
   .summary-stats {
     width: 100%;
     justify-content: space-between;
+  }
+}
+
+.task-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.inline-actions {
+  margin-top: 0;
+  margin-left: 8px;
+}
+
+.task-item-highlight {
+  background-color: #E6F7FF; /* 淡蓝色背景 */
+  box-shadow: 0 0 12px rgba(64, 158, 255, 0.4); /* 蓝色阴影 */
+  transition: all 1s ease-out; /* 更慢的淡出效果 */
+  border-left: 3px solid #409EFF; /* 蓝色左边框 */
+  animation: highlight-pulse 1s ease-in-out; /* 添加脉冲动画 */
+}
+
+/* 添加脉冲动画效果 */
+@keyframes highlight-pulse {
+  0% { 
+    background-color: #E6F7FF; 
+    box-shadow: 0 0 5px rgba(64, 158, 255, 0.3);
+  }
+  50% { 
+    background-color: #E1F5FE; 
+    box-shadow: 0 0 15px rgba(64, 158, 255, 0.5);
+  }
+  100% { 
+    background-color: #E6F7FF; 
+    box-shadow: 0 0 12px rgba(64, 158, 255, 0.4);
   }
 }
 </style> 
