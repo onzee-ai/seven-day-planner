@@ -16,12 +16,23 @@ import {
   ArrowDown
 } from '@element-plus/icons-vue'
 import HistoryPanel from '../components/HistoryPanel.vue'
+// 仅在开发环境中导入测试数据工具
 import { DevTools } from '../testData'
 // @ts-ignore
 import { useRouter } from 'vue-router'
 import AISummaryDialog from '../components/AISummaryDialog.vue'
 
 const router = useRouter()
+
+// 在文件顶部添加日志控制变量
+const isDevMode = import.meta.env.DEV;
+
+// 创建自定义日志函数，只在开发模式下输出日志
+const log = (message: string, ...args: any[]) => {
+  if (isDevMode) {
+    console.log(`[HomePage] ${message}`, ...args);
+  }
+};
 
 // 状态
 const currentDate = ref(dayjs().format('YYYY-MM-DD'))
@@ -77,7 +88,7 @@ const allHistoryDates = computed(() => {
   
   const uniqueDates = [...new Set(tasks.value.map(task => task.date))]
   const result = uniqueDates.sort((a, b) => dayjs(b).unix() - dayjs(a).unix())
-  console.log('[HomePage] allHistoryDates:', result.length, result.slice(0, 3))
+  log('allHistoryDates:', result.length, result.slice(0, 3))
   return result
 })
 
@@ -433,21 +444,14 @@ const updateTaskDueTime = (time: Date | null) => {
 
 // 打开设置窗口 - 使用路由导航替代Electron窗口
 const openSettings = () => {
-  // 首先尝试使用Electron API打开设置窗口
   if (window.electronAPI?.settings) {
+    // 使用electronAPI打开设置窗口
     window.electronAPI.settings.open()
-      .then(() => {
-        console.log('[HomePage] Settings window opened via Electron')
-      })
-      .catch((error: unknown) => {
-        console.error('[HomePage] Failed to open settings window via Electron:', error)
-        // 失败后尝试使用路由导航
-        router.push('/settings')
-      })
+    log('Settings window opened via Electron')
   } else {
-    // 如果没有Electron API，使用路由导航
-    console.log('[HomePage] Using router navigation for settings')
+    // 使用路由导航到设置页面
     router.push('/settings')
+    log('Using router navigation for settings')
   }
 }
 
@@ -545,39 +549,19 @@ onMounted(async () => {
   disableAllTextareaResize()
   
   try {
-    // 开发环境标志
-    const isDevEnv = !window.electronAPI || window.electronAPI.isDev
+    // 判断是否为开发环境
+    const isDevEnv = import.meta.env.DEV || (window.electronAPI?.isDev ?? false)
     
-    // 控制是否加载测试数据的标志 - 设置为false以禁用测试数据
-    const LOAD_TEST_DATA = false
+    // 开发环境标志：是否加载测试数据
+    const LOAD_TEST_DATA = false // 改成true会在每次启动时生成新的测试数据
     
-    console.log('[HomePage] 初始化, 开发环境:', isDevEnv, '加载测试数据:', LOAD_TEST_DATA)
-    
-    // 如果没有 electronAPI 或在开发环境中
-    if (!window.electronAPI) {
-      console.warn('[HomePage] electronAPI not found, using mock implementation')
-      
-      // 创建模拟实现
-      window.electronAPI = {
-        store: {
-          get: async (key: string) => {
-            const stored = localStorage.getItem(key)
-            return stored ? JSON.parse(stored) : null
-          },
-          set: async (key: string, value: any) => {
-            localStorage.setItem(key, JSON.stringify(value))
-            return true
-          }
-        },
-        isDev: true
-      }
-    }
+    log('初始化, 开发环境:', isDevEnv, '加载测试数据:', LOAD_TEST_DATA)
     
     // 在开发环境中（浏览器或electron开发模式）且开启了测试数据标志时才生成测试数据
     if (isDevEnv && LOAD_TEST_DATA) {
-      console.log('[HomePage] 开发环境，生成测试数据')
+      log('开发环境，生成测试数据')
       const testData = DevTools.generateHistoryData()
-      console.log(`[HomePage] 生成了${testData.length}条测试数据`)
+      log(`生成了${testData.length}条测试数据`)
       tasks.value = testData
       
       // 保存测试数据
