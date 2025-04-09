@@ -3,18 +3,33 @@
 # 设置错误处理
 set -e
 
+# 应用版本（与package.json和README.md保持一致）
+APP_VERSION="1.2.0"
+BUILD_DATE=$(date +"%Y年%m月%d日")
+
 # 显示使用方法
 show_usage() {
+  echo "=============================================="
+  echo "七日计划 (Seven Day Planner) 应用打包工具 v${APP_VERSION}"
+  echo "=============================================="
   echo "使用方法: ./build.sh [选项]"
   echo "选项:"
-  echo "  --all     为所有平台构建 (Mac, Windows, Linux)"
+  echo "  --all     为所有平台构建 (Mac, Windows)"
   echo "  --mac     仅为 macOS 构建"
   echo "  --win     仅为 Windows 构建"
-  echo "  --linux   仅为 Linux 构建"
+  echo "  --clean   仅清理构建产物"
+  echo "  --version 显示当前版本"
   echo "  --help    显示此帮助信息"
   echo ""
   echo "示例: ./build.sh --mac     # 仅为 macOS 构建"
   echo "      ./build.sh --all     # 为所有平台构建"
+  echo "      ./build.sh --clean   # 仅清理构建产物"
+}
+
+# 显示版本信息
+show_version() {
+  echo "七日计划 (Seven Day Planner) v${APP_VERSION}"
+  echo "构建日期: ${BUILD_DATE}"
 }
 
 # 检查系统环境依赖
@@ -99,30 +114,8 @@ check_system_requirements() {
     Linux)
       # Linux特定检查
       echo "检测到Linux操作系统"
-      # 检查必要的库
-      MISSING_LIBS=false
-      
-      # 检查常见的构建依赖
-      for pkg in libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libuuid1; do
-        if ! dpkg -l | grep -q $pkg; then
-          echo "警告: 未检测到 $pkg"
-          MISSING_LIBS=true
-        fi
-      done
-      
-      if [ "$MISSING_LIBS" = true ]; then
-        echo "一些构建Electron应用所需的依赖包缺失"
-        echo "在Ubuntu/Debian系统，可以运行:"
-        echo "sudo apt-get install libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libuuid1"
-        read -p "是否尝试自动安装这些依赖? (y/n): " INSTALL_LIBS
-        if [[ $INSTALL_LIBS =~ ^[Yy]$ ]]; then
-          echo "正在安装依赖..."
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 xdg-utils libatspi2.0-0 libuuid1
-        fi
-      else
-        echo "系统库依赖检查通过"
-      fi
+      echo "注意: 当前脚本不再支持Linux构建"
+      echo "请使用 --mac 或 --win 选项"
       ;;
     MINGW*|MSYS*)
       # Windows特定检查
@@ -132,6 +125,35 @@ check_system_requirements() {
   esac
   
   echo "系统环境检查完成"
+}
+
+# 同步版本号到package.json
+update_version_in_package() {
+  echo "正在同步版本号到package.json..."
+  
+  # 检查是否存在sed命令
+  if ! command -v sed &> /dev/null; then
+    echo "警告: 未检测到sed命令，无法更新版本号"
+    return
+  fi
+  
+  # 获取当前package.json中的版本号
+  CURRENT_VERSION=$(grep -o '"version": *"[^"]*"' package.json | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
+  
+  if [ "$CURRENT_VERSION" != "$APP_VERSION" ]; then
+    echo "更新版本号: $CURRENT_VERSION -> $APP_VERSION"
+    
+    # macOS与其他系统的sed命令略有不同
+    if [ "$(uname -s)" = "Darwin" ]; then
+      sed -i '' 's/"version": *"[^"]*"/"version": "'$APP_VERSION'"/' package.json
+    else
+      sed -i 's/"version": *"[^"]*"/"version": "'$APP_VERSION'"/' package.json
+    fi
+    
+    echo "版本号已更新"
+  else
+    echo "版本号已是最新: $APP_VERSION"
+  fi
 }
 
 # 检查依赖是否已安装
@@ -162,9 +184,58 @@ check_and_install_dependencies() {
 # 清理旧的构建文件，但保留release目录
 clean_old_builds() {
   echo "清理旧的构建文件..."
-  rm -rf dist dist-electron
+  
+  if [ -d "dist" ] || [ -d "dist-electron" ]; then
+    rm -rf dist dist-electron
+    echo "已清理dist和dist-electron目录"
+  else
+    echo "无需清理：dist和dist-electron目录不存在"
+  fi
+  
   # 不再删除release目录，而是在其中创建平台子目录
-  mkdir -p release/mac release/win release/linux
+  mkdir -p release/mac release/win
+}
+
+# 清理不必要的构建数据
+clean_build_artifacts() {
+  echo "清理构建过程中产生的临时文件..."
+  
+  # 清理构建目录
+  if [ -d "dist" ]; then
+    echo "清理 dist 目录..."
+    rm -rf dist
+  fi
+  
+  if [ -d "dist-electron" ]; then
+    echo "清理 dist-electron 目录..."
+    rm -rf dist-electron
+  fi
+  
+  # 清理可能存在的缓存文件
+  if [ -d ".electron-builder-cache" ]; then
+    echo "清理 .electron-builder-cache 目录..."
+    rm -rf .electron-builder-cache
+  fi
+  
+  if [ -d ".webpack" ]; then
+    echo "清理 .webpack 目录..."
+    rm -rf .webpack
+  fi
+  
+  # 清理其他可能的临时文件
+  echo "清理其他临时文件..."
+  find . -name "*.tsbuildinfo" -delete
+  find . -name ".DS_Store" -delete
+  
+  echo "构建临时文件清理完成"
+  
+  # 如果需要更彻底的清理，可以取消下面注释(不推荐用于开发环境)
+  # echo "注意: 是否清理node_modules? 这将移除所有依赖，后续构建需要重新安装"
+  # read -p "是否清理node_modules? (y/n): " CLEAN_MODULES
+  # if [[ $CLEAN_MODULES =~ ^[Yy]$ ]]; then
+  #   echo "清理node_modules..."
+  #   rm -rf node_modules
+  # fi
 }
 
 # 为指定平台构建
@@ -172,37 +243,53 @@ build_for_platform() {
   platform=$1
   echo "开始为 $platform 平台构建..."
   
+  # 在构建前同步版本号
+  update_version_in_package
+  
   case "$platform" in
     mac)
       # 为macOS构建
+      echo "正在为macOS构建v${APP_VERSION}版本..."
       npm run build -- --mac
+      
+      # 创建版本子目录用于归档
+      VERSION_DIR="release/mac/v${APP_VERSION}"
+      mkdir -p "$VERSION_DIR"
+      
       # 移动构建结果到对应平台文件夹
-      echo "移动macOS构建结果到release/mac目录..."
-      mkdir -p release/mac
-      find release -maxdepth 1 -type f -name "*.dmg" -o -name "*.zip" | xargs -I {} mv {} release/mac/
+      echo "移动macOS构建结果到$VERSION_DIR目录..."
+      find release -maxdepth 1 -type f -name "*.dmg" -o -name "*.zip" | xargs -I {} mv {} "$VERSION_DIR/"
+      
+      # 创建版本信息文件
+      echo "创建版本信息文件..."
+      echo "版本: v${APP_VERSION}" > "$VERSION_DIR/version-info.txt"
+      echo "构建日期: ${BUILD_DATE}" >> "$VERSION_DIR/version-info.txt"
+      echo "平台: macOS" >> "$VERSION_DIR/version-info.txt"
       ;;
     win)
       # 为Windows构建
+      echo "正在为Windows构建v${APP_VERSION}版本..."
       npm run build -- --win
+      
+      # 创建版本子目录用于归档
+      VERSION_DIR="release/win/v${APP_VERSION}"
+      mkdir -p "$VERSION_DIR"
+      
       # 移动构建结果到对应平台文件夹
-      echo "移动Windows构建结果到release/win目录..."
-      mkdir -p release/win
-      find release -maxdepth 1 -type f -name "*.exe" -o -name "*.msi" | xargs -I {} mv {} release/win/
-      ;;
-    linux)
-      # 为Linux构建
-      npm run build -- --linux
-      # 移动构建结果到对应平台文件夹
-      echo "移动Linux构建结果到release/linux目录..."
-      mkdir -p release/linux
-      find release -maxdepth 1 -type f -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" | xargs -I {} mv {} release/linux/
+      echo "移动Windows构建结果到$VERSION_DIR目录..."
+      find release -maxdepth 1 -type f -name "*.exe" -o -name "*.msi" | xargs -I {} mv {} "$VERSION_DIR/"
+      
+      # 创建版本信息文件
+      echo "创建版本信息文件..."
+      echo "版本: v${APP_VERSION}" > "$VERSION_DIR/version-info.txt"
+      echo "构建日期: ${BUILD_DATE}" >> "$VERSION_DIR/version-info.txt"
+      echo "平台: Windows" >> "$VERSION_DIR/version-info.txt"
       ;;
     all)
       # 为所有平台构建
       # 先构建各个平台
       build_for_platform "mac"
       build_for_platform "win"
-      build_for_platform "linux"
       # 由于我们已经在每个平台构建后移动了文件，这里不需要额外操作
       echo "所有平台构建完成，结果已保存到各自目录!"
       return
@@ -214,45 +301,36 @@ build_for_platform() {
       ;;
   esac
   
-  echo "$platform 平台构建完成!"
+  echo "$platform 平台v${APP_VERSION}版本构建完成!"
 }
 
 # 主函数
 main() {
-  echo "=============================================="
-  echo "七日计划 (Seven Day Planner) 应用打包工具"
-  echo "=============================================="
-  
-  # 如果没有参数，显示帮助信息
+  # 处理命令行参数
   if [ $# -eq 0 ]; then
     show_usage
-    exit 0
+    exit 1
   fi
-  
-  # 处理命令行参数
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --mac)
-        platform="mac"
-        ;;
-      --win)
-        platform="win"
-        ;;
-      --linux)
-        platform="linux"
-        ;;
-      --all)
-        platform="all"
-        ;;
-      --help)
-        show_usage
-        exit 0
-        ;;
-      *)
-        echo "错误: 未知选项 '$1'"
-        show_usage
-        exit 1
-        ;;
+
+  while [ "$1" != "" ]; do
+    case $1 in
+      --mac )    build_for_platform "mac"
+                 ;;
+      --win )    build_for_platform "win"
+                 ;;
+      --all )    build_for_platform "all"
+                 ;;
+      --clean )  clean_build_artifacts
+                 ;;
+      --version ) show_version
+                  exit 0
+                  ;;
+      --help )   show_usage
+                 exit 0
+                 ;;
+      * )        echo "错误: 未知选项 '$1'"
+                 show_usage
+                 exit 1
     esac
     shift
   done
@@ -269,8 +347,13 @@ main() {
   # 构建应用
   build_for_platform "$platform"
   
+  # 清理构建产生的临时文件
+  clean_build_artifacts
+  
   echo "==============================================="
-  echo "构建完成! 请在 'release' 目录查看打包后的文件。"
+  echo "七日计划 (Seven Day Planner) v${APP_VERSION} 构建完成!"
+  echo "构建日期: ${BUILD_DATE}"
+  echo "请在 'release' 目录查看打包后的文件。"
   echo "==============================================="
 }
 

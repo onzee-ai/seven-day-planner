@@ -74,9 +74,8 @@
 # 为当前平台构建
 ./build.sh --mac    # macOS
 ./build.sh --win    # Windows
-./build.sh --linux  # Linux
 
-# 为所有平台构建
+# 为所有平台构建（Mac和Windows）
 ./build.sh --all
 ```
 
