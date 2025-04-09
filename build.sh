@@ -159,10 +159,12 @@ check_and_install_dependencies() {
   fi
 }
 
-# 清理旧的构建文件
+# 清理旧的构建文件，但保留release目录
 clean_old_builds() {
   echo "清理旧的构建文件..."
-  rm -rf dist dist-electron release
+  rm -rf dist dist-electron
+  # 不再删除release目录，而是在其中创建平台子目录
+  mkdir -p release/mac release/win release/linux
 }
 
 # 为指定平台构建
@@ -174,18 +176,36 @@ build_for_platform() {
     mac)
       # 为macOS构建
       npm run build -- --mac
+      # 移动构建结果到对应平台文件夹
+      echo "移动macOS构建结果到release/mac目录..."
+      mkdir -p release/mac
+      find release -maxdepth 1 -type f -name "*.dmg" -o -name "*.zip" | xargs -I {} mv {} release/mac/
       ;;
     win)
       # 为Windows构建
       npm run build -- --win
+      # 移动构建结果到对应平台文件夹
+      echo "移动Windows构建结果到release/win目录..."
+      mkdir -p release/win
+      find release -maxdepth 1 -type f -name "*.exe" -o -name "*.msi" | xargs -I {} mv {} release/win/
       ;;
     linux)
       # 为Linux构建
       npm run build -- --linux
+      # 移动构建结果到对应平台文件夹
+      echo "移动Linux构建结果到release/linux目录..."
+      mkdir -p release/linux
+      find release -maxdepth 1 -type f -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" | xargs -I {} mv {} release/linux/
       ;;
     all)
       # 为所有平台构建
-      npm run build -- --mac --win --linux
+      # 先构建各个平台
+      build_for_platform "mac"
+      build_for_platform "win"
+      build_for_platform "linux"
+      # 由于我们已经在每个平台构建后移动了文件，这里不需要额外操作
+      echo "所有平台构建完成，结果已保存到各自目录!"
+      return
       ;;
     *)
       echo "错误: 未知平台 '$platform'"
